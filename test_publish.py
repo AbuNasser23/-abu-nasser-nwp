@@ -46,6 +46,28 @@ class PublishTests(unittest.TestCase):
         self.assertNotIn(123, steps)
         self.assertIn(144, steps)
 
+    def test_same_run_with_legacy_144h_payload_is_not_treated_as_published(self):
+        run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            publish.write_cycle(site, "ecmwf", sample_pack(run))
+            publish.flip_pointer(site, "ecmwf", run, "test")
+            self.assertTrue(publish.current_cycle_ok(site, "ecmwf", run))
+
+            meta_path = publish.cycle_dir(site, "ecmwf", run) / "meta.json"
+            meta = publish.read_json(meta_path)
+            meta["horizonHours"] = 144
+            meta["nT"] = 49
+            meta_path.write_text(__import__("json").dumps(meta))
+
+            current_path = site / "ecmwf" / "current.json"
+            current = publish.read_json(current_path)
+            current["horizonHours"] = 144
+            current["nT"] = 49
+            current_path.write_text(__import__("json").dumps(current))
+            self.assertTrue(publish.pointer_matches(site, "ecmwf", run))
+            self.assertFalse(publish.current_cycle_ok(site, "ecmwf", run))
+
     def test_pointer_stays_until_cycle_is_readable(self):
         run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
         with tempfile.TemporaryDirectory() as tmp:
