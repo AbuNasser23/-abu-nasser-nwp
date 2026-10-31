@@ -130,7 +130,7 @@ def fetch_range(url: str, start: int, end: int) -> bytes:
                 if res.status != 206:
                     raise RuntimeError(f"range request expected HTTP 206, got {res.status} {url}")
                 content_range = res.headers.get("Content-Range", "")
-                if re.fullmatch(rf"bytes {start}-{end - 1}/(?:[0-9]+|\\*)", content_range) is None:
+                if re.fullmatch(rf"bytes {start}-{end - 1}/[0-9]+", content_range) is None:
                     raise RuntimeError(
                         f"invalid Content-Range {content_range!r} for requested bytes {start}-{end - 1}"
                     )
@@ -721,9 +721,11 @@ def validate_meta(meta: dict, model: str) -> None:
     fields = meta.get("fields")
     if not isinstance(fields, list) or not all(isinstance(name, str) for name in fields):
         raise RuntimeError("meta fields must be a list of names")
-    for name in list(CORE) + ["lit", "lifted"]:
-        if name not in fields:
-            raise RuntimeError(f"meta missing {name}")
+    required_fields = set(CORE) | {"lit", "lifted"}
+    if set(fields) != required_fields:
+        missing = sorted(required_fields - set(fields))
+        extra = sorted(set(fields) - required_fields)
+        raise RuntimeError(f"meta field set mismatch; missing={missing}, extra={extra}")
     digests = meta.get("digests")
     if not isinstance(digests, dict):
         raise RuntimeError("meta digests must be an object")
