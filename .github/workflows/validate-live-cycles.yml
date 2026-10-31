@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - fix/ecmwf-gusts-fallback-144h
+      - feat/publisher-240h-validated
     paths:
       - "publish.py"
       - ".github/workflows/validate-live-cycles.yml"
