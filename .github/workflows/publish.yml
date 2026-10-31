@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+         pip install requests numpy pandas 
 
       - name: Run Publisher Script
         run: python publish.py
