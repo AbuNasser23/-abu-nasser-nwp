@@ -1,0 +1,9 @@
+{
+  "model": "ecmwf",
+  "ok": false,
+  "run": "2026-10-31T12:00:00Z",
+  "error": "+93h missing gusts",
+  "failCount": 1,
+  "nextAttempt": "2026-10-31T21:55:02Z",
+  "at": "2026-10-31T21:25:02Z"
+}
