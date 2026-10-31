@@ -76,6 +76,31 @@ class PublishTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             publish.validate_meta(meta, "ecmwf")
 
+    def test_ecmwf_missing_gusts_gets_explicit_wind_based_estimate(self):
+        fields = {
+            "u10": np.full((2, 3), 12.0, dtype=np.float32),
+            "v10": np.full((2, 3), 5.0, dtype=np.float32),
+        }
+        self.assertTrue(publish.fill_missing_ecmwf_gusts(fields))
+        expected = round((13.0 * 1.3) * 10) / 10
+        self.assertTrue(np.allclose(fields["gusts"], expected))
+        self.assertEqual(fields["gusts"].dtype, np.float32)
+
+    def test_ecmwf_provider_gusts_are_never_overwritten(self):
+        original = np.full((2, 3), 42.0, dtype=np.float32)
+        fields = {
+            "u10": np.full((2, 3), 12.0, dtype=np.float32),
+            "v10": np.full((2, 3), 5.0, dtype=np.float32),
+            "gusts": original.copy(),
+        }
+        self.assertFalse(publish.fill_missing_ecmwf_gusts(fields))
+        self.assertTrue(np.array_equal(fields["gusts"], original))
+
+    def test_missing_gusts_without_wind_components_is_not_fabricated(self):
+        fields = {"u10": np.ones((2, 3), dtype=np.float32)}
+        self.assertFalse(publish.fill_missing_ecmwf_gusts(fields))
+        self.assertNotIn("gusts", fields)
+
     def test_gfs_analysis_precip_is_zeros_only(self):
         fields = {"t2m": np.ones((publish.NY, publish.NX), dtype=np.float32)}
         geo = {"window": None}
