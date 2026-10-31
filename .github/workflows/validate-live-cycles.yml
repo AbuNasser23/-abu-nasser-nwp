@@ -1,4 +1,4 @@
-name: Validate Live NWP Cycles
+name: Validate Native 240h ECMWF and GFS Cycles
 
 on:
   push:
