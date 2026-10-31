@@ -3,11 +3,11 @@
   "run": "2026-10-31T18:00:00Z",
   "path": "gfs/cycles/20261031T18Z",
   "complete": true,
-  "nT": 49,
+  "nT": 61,
   "nx": 173,
   "ny": 137,
-  "horizonHours": 144,
-  "publishedAt": "2026-10-31T23:09:43Z",
+  "horizonHours": 240,
+  "publishedAt": "2026-10-31T23:52:48Z",
   "source": "NOAA GFS 0.25 AWS",
   "previous": "2026-10-31T12:00:00Z"
 }

@@ -3,11 +3,11 @@
   "run": "2026-10-31T12:00:00Z",
   "path": "ecmwf/cycles/20261031T12Z",
   "complete": true,
-  "nT": 49,
+  "nT": 65,
   "nx": 173,
   "ny": 137,
-  "horizonHours": 144,
-  "publishedAt": "2026-10-31T23:04:27Z",
+  "horizonHours": 240,
+  "publishedAt": "2026-10-31T23:49:14Z",
   "source": "ECMWF Open Data IFS 0.25",
   "previous": null
 }
