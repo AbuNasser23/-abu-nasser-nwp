@@ -51,10 +51,13 @@ ECMWF_SURFACE = {
 ECMWF_PL = {"t": "t", "r": "rh", "gh": "z", "u": "u", "v": "v"}
 
 
-def hours() -> list[int]:
-    # Keep 3-hourly detail through +144h, then follow both providers'
-    # 6-hourly extended-range cadence through +240h.
-    return list(range(0, 145, 3)) + list(range(150, HORIZON + 1, 6))
+def hours(model: str) -> list[int]:
+    """Use each provider's native forecast cadence through +240h."""
+    if model == "ecmwf":
+        return list(range(0, 145, 3)) + list(range(150, HORIZON + 1, 6))
+    if model == "gfs":
+        return list(range(0, 121, 3)) + list(range(126, HORIZON + 1, 6))
+    raise RuntimeError(f"unknown model {model}")
 
 
 def utcnow() -> datetime:
@@ -81,8 +84,8 @@ def candidates(model: str, now: datetime, lookback: int = 8) -> list[datetime]:
     return [cur - timedelta(hours=step * i) for i in range(lookback)]
 
 
-def expected_times(run: datetime) -> list[str]:
-    return [iso_of(run + timedelta(hours=hour)) for hour in hours()]
+def expected_times(run: datetime, model: str) -> list[str]:
+    return [iso_of(run + timedelta(hours=hour)) for hour in hours(model)]
 
 
 def head_ok(url: str, timeout: int = 25) -> bool:
@@ -160,7 +163,7 @@ def step_marker(model: str, run: datetime, hour: int) -> str:
 
 
 def cycle_steps_ready(model: str, run: datetime) -> bool:
-    urls = [step_marker(model, run, hour) for hour in hours()]
+    urls = [step_marker(model, run, hour) for hour in hours(model)]
     ok = 0
     lock = threading.Lock()
 
@@ -573,7 +576,7 @@ def assemble(model: str, run: datetime) -> dict:
     prev_tp = None
     windows = []
     notes = []
-    for hour in hours():
+    for hour in hours(model):
         fields, geo = pull_ecmwf_step(run, hour) if model == "ecmwf" else decode_gfs_step(pull_gfs_blob(run, hour))
         if lats is None:
             lats, lons = geo["lats"], geo["lons"]
@@ -610,7 +613,7 @@ def assemble(model: str, run: datetime) -> dict:
     empty = np.full((len(frames), len(lats), len(lons)), np.nan, dtype=np.float32)
     stack["lit"] = empty.copy()
     stack["lifted"] = empty.copy()
-    pack = {"run": run, "lats": lats, "lons": lons, "fields": stack}
+    pack = {"model": model, "run": run, "lats": lats, "lons": lons, "fields": stack}
     if notes:
         pack["notes"] = notes
     return pack
@@ -673,7 +676,7 @@ def read_json(path: Path) -> dict | None:
 
 def bundle_files(pack: dict) -> tuple[dict[str, bytes], dict]:
     run = pack["run"]
-    times = expected_times(run)
+    times = expected_times(run, pack["model"])
     files: dict[str, bytes] = {}
     digests = {}
     for name, values in pack["fields"].items():
@@ -687,7 +690,7 @@ def bundle_files(pack: dict) -> tuple[dict[str, bytes], dict]:
 
 def meta_of(model: str, pack: dict, digests: dict) -> dict:
     run = pack["run"]
-    times = expected_times(run)
+    times = expected_times(run, model)
     source = "ECMWF Open Data · IFS 0.25° مباشرة" if model == "ecmwf" else "NOAA GFS 0.25° مباشرة"
     label = "ECMWF IFS" if model == "ecmwf" else "GFS"
     return {
@@ -713,10 +716,10 @@ def meta_of(model: str, pack: dict, digests: dict) -> dict:
 def validate_meta(meta: dict, model: str) -> None:
     if meta.get("model") != model:
         raise RuntimeError("model mismatch")
-    if meta.get("nx") != NX or meta.get("ny") != NY or meta.get("nT") != len(hours()):
+    if meta.get("nx") != NX or meta.get("ny") != NY or meta.get("nT") != len(hours(model)):
         raise RuntimeError("grid or step count mismatch")
     run = parse_iso(meta["run"])
-    if meta.get("times") != expected_times(run):
+    if meta.get("times") != expected_times(run, model):
         raise RuntimeError("valid times do not match the run")
     if meta.get("horizonHours") != HORIZON:
         raise RuntimeError("horizon is not 240h")
@@ -779,7 +782,7 @@ def write_cycle(site: Path, model: str, pack: dict) -> Path:
         "horizonHours": HORIZON,
         "nx": NX,
         "ny": NY,
-        "nT": len(hours()),
+        "nT": len(hours(model)),
         "source": meta["source"],
         "fetchedAt": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "files": digests,
@@ -809,7 +812,7 @@ def flip_pointer(site: Path, model: str, run: datetime, source: str) -> None:
         "run": iso_of(run),
         "path": f"{model}/cycles/{stamp_of(run)}",
         "complete": True,
-        "nT": len(hours()),
+        "nT": len(hours(model)),
         "nx": NX,
         "ny": NY,
         "horizonHours": HORIZON,
