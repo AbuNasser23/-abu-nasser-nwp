@@ -1,0 +1,64 @@
+name: Validate Live NWP Cycles
+
+on:
+  push:
+    branches:
+      - fix/ecmwf-gusts-fallback-144h
+    paths:
+      - "publish.py"
+      - ".github/workflows/validate-live-cycles.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-live-nwp-cycles
+  cancel-in-progress: false
+
+jobs:
+  validate-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout candidate publisher
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy eccodes
+
+      - name: Fetch and validate a complete ECMWF cycle (isolated workspace)
+        run: python publish.py --model ecmwf --site "$RUNNER_TEMP/nwp-validation"
+
+      - name: Fetch and validate a complete GFS cycle (isolated workspace)
+        run: python publish.py --model gfs --site "$RUNNER_TEMP/nwp-validation"
+
+      - name: Verify both published pointers and 144h payload integrity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import publish
+
+          root = Path(__import__("os").environ["RUNNER_TEMP"]) / "nwp-validation"
+          for model in ("ecmwf", "gfs"):
+              pointer = publish.read_json(root / model / "current.json")
+              if not pointer or pointer.get("complete") is not True:
+                  raise SystemExit(f"{model}: current pointer is not complete")
+              if pointer.get("horizonHours") != 144 or pointer.get("nT") != 49:
+                  raise SystemExit(f"{model}: expected 144h / 49 time steps")
+              from datetime import datetime
+              run = publish.parse_iso(pointer["run"])
+              cycle = root / model / "cycles" / publish.stamp_of(run)
+              if not publish.disk_cycle_ok(cycle, model, run):
+                  raise SystemExit(f"{model}: cycle integrity re-read failed")
+              meta = publish.read_json(cycle / "meta.json")
+              print(f"{model}: {pointer['run']} | {meta['nT']} steps | {meta['horizonHours']}h | integrity OK")
+          PY
