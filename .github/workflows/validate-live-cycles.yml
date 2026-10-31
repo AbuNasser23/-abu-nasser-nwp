@@ -3,6 +3,7 @@ name: Validate Live NWP Cycles
 on:
   push:
     branches:
+      - main
       - fix/ecmwf-gusts-fallback-144h
     paths:
       - "publish.py"
