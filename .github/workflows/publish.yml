@@ -1,6 +1,12 @@
 name: Publish NWP Data
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "publish.py"
+      - ".github/workflows/publish.yml"
   schedule:
     - cron: '0 */3 * * *'
   workflow_dispatch:
