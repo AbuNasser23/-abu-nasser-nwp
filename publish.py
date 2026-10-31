@@ -676,7 +676,7 @@ def read_json(path: Path) -> dict | None:
 
 def bundle_files(pack: dict) -> tuple[dict[str, bytes], dict]:
     run = pack["run"]
-    times = expected_times(run, model)
+    times = expected_times(run, pack["model"])
     files: dict[str, bytes] = {}
     digests = {}
     for name, values in pack["fields"].items():
