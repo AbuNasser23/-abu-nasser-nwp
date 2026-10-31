@@ -41,7 +41,7 @@ jobs:
       - name: Fetch and validate a complete GFS cycle (isolated workspace)
         run: python publish.py --model gfs --site "$RUNNER_TEMP/nwp-validation"
 
-      - name: Verify both published pointers and 144h payload integrity
+      - name: Verify both published pointers and 240h payload integrity
         run: |
           python - <<'PY'
           import json
@@ -53,8 +53,8 @@ jobs:
               pointer = publish.read_json(root / model / "current.json")
               if not pointer or pointer.get("complete") is not True:
                   raise SystemExit(f"{model}: current pointer is not complete")
-              if pointer.get("horizonHours") != 144 or pointer.get("nT") != 49:
-                  raise SystemExit(f"{model}: expected 144h / 49 time steps")
+              if pointer.get("horizonHours") != 240 or pointer.get("nT") != 65:
+                  raise SystemExit(f"{model}: expected 240h / 65 time steps")
               from datetime import datetime
               run = publish.parse_iso(pointer["run"])
               cycle = root / model / "cycles" / publish.stamp_of(run)
