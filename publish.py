@@ -12,6 +12,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import threading
@@ -68,6 +69,8 @@ def iso_of(run: datetime) -> str:
 
 
 def parse_iso(text: str) -> datetime:
+    if not isinstance(text, str):
+        raise ValueError("timestamp must be a string")
     raw = text.replace(".000Z", "Z")
     return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
@@ -124,9 +127,19 @@ def fetch_range(url: str, start: int, end: int) -> bytes:
         )
         try:
             with urllib.request.urlopen(req, timeout=90) as res:
-                if res.status not in (200, 206):
-                    raise RuntimeError(f"{res.status} {url}")
-                return res.read()
+                if res.status != 206:
+                    raise RuntimeError(f"range request expected HTTP 206, got {res.status} {url}")
+                content_range = res.headers.get("Content-Range", "")
+                if re.fullmatch(rf"bytes {start}-{end - 1}/[0-9]+", content_range) is None:
+                    raise RuntimeError(
+                        f"invalid Content-Range {content_range!r} for requested bytes {start}-{end - 1}"
+                    )
+                body = res.read()
+                if len(body) != end - start:
+                    raise RuntimeError(
+                        f"range body size {len(body)} does not match requested {end - start} bytes"
+                    )
+                return body
         except urllib.error.HTTPError as exc:
             last = f"{exc.code} {url}"
             if exc.code not in (429, 500, 502, 503, 504):
@@ -646,8 +659,9 @@ def atomic_write(path: Path, data: bytes) -> None:
 
 def read_json(path: Path) -> dict | None:
     try:
-        return json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else None
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return None
 
 
@@ -690,18 +704,34 @@ def meta_of(model: str, pack: dict, digests: dict) -> dict:
 
 
 def validate_meta(meta: dict, model: str) -> None:
+    if not isinstance(meta, dict):
+        raise RuntimeError("meta must be a JSON object")
     if meta.get("model") != model:
         raise RuntimeError("model mismatch")
     if meta.get("nx") != NX or meta.get("ny") != NY or meta.get("nT") != len(hours()):
         raise RuntimeError("grid or step count mismatch")
-    run = parse_iso(meta["run"])
+    try:
+        run = parse_iso(meta.get("run"))
+    except (TypeError, ValueError, KeyError) as exc:
+        raise RuntimeError("invalid run timestamp") from exc
     if meta.get("times") != expected_times(run):
         raise RuntimeError("valid times do not match the run")
     if meta.get("horizonHours") != HORIZON:
         raise RuntimeError("horizon is not 144h")
-    for name in CORE:
-        if name not in meta.get("fields", []):
-            raise RuntimeError(f"meta missing {name}")
+    fields = meta.get("fields")
+    if not isinstance(fields, list) or not all(isinstance(name, str) for name in fields):
+        raise RuntimeError("meta fields must be a list of names")
+    required_fields = set(CORE) | {"lit", "lifted"}
+    if set(fields) != required_fields:
+        missing = sorted(required_fields - set(fields))
+        extra = sorted(set(fields) - required_fields)
+        raise RuntimeError(f"meta field set mismatch; missing={missing}, extra={extra}")
+    digests = meta.get("digests")
+    if not isinstance(digests, dict):
+        raise RuntimeError("meta digests must be an object")
+    for name in fields:
+        if name not in digests:
+            raise RuntimeError(f"meta digest missing {name}")
 
 
 def cycle_dir(site: Path, model: str, run: datetime) -> Path:
@@ -720,21 +750,44 @@ def pointer_matches(site: Path, model: str, run: datetime) -> bool:
 
 def disk_cycle_ok(path: Path, model: str, run: datetime) -> bool:
     meta = read_json(path / "meta.json")
-    if not meta:
+    if not isinstance(meta, dict):
         return False
     try:
         validate_meta(meta, model)
-    except RuntimeError:
-        return False
-    if parse_iso(meta["run"]) != run:
-        return False
-    for name in list(CORE) + ["lit", "lifted"]:
-        file = path / f"{name}.f32.bin"
-        if not file.exists() or file.stat().st_size < 32:
+        if parse_iso(meta["run"]) != run:
             return False
-        if file.read_bytes()[:2] != b"\x1f\x8b":
-            return False
-    return True
+        expected_raw_bytes = len(hours()) * NY * NX * 4
+        for name in meta["fields"]:
+            entry = meta["digests"].get(name)
+            if not isinstance(entry, dict):
+                return False
+            expected_hash = entry.get("sha256")
+            expected_compressed_bytes = entry.get("bytes")
+            if (
+                not isinstance(expected_hash, str)
+                or re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None
+                or isinstance(expected_compressed_bytes, bool)
+                or not isinstance(expected_compressed_bytes, int)
+                or expected_compressed_bytes <= 0
+            ):
+                return False
+            file = path / f"{name}.f32.bin"
+            payload = file.read_bytes()
+            if len(payload) != expected_compressed_bytes:
+                return False
+            if sha256(payload) != expected_hash:
+                return False
+            if not payload.startswith(b"\x1f\x8b"):
+                return False
+            try:
+                raw = gzip.decompress(payload)
+            except Exception:
+                return False
+            if len(raw) != expected_raw_bytes:
+                return False
+        return True
+    except Exception:
+        return False
 
 
 def write_cycle(site: Path, model: str, pack: dict) -> Path:
@@ -859,7 +912,10 @@ def publish_model(site: Path, model: str, *, keep: int = KEEP_DEFAULT, now: date
     site.mkdir(parents=True, exist_ok=True)
     (site / model).mkdir(parents=True, exist_ok=True)
     status = read_json(site / model / "status.json") or {}
-    fail_count = int(status.get("failCount") or 0)
+    try:
+        fail_count = max(0, int(status.get("failCount") or 0))
+    except (TypeError, ValueError, OverflowError):
+        fail_count = 0
     run = None
     try:
         run = discover(model, now)

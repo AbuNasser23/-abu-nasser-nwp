@@ -1,5 +1,8 @@
+import gzip
+import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -85,6 +88,110 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(float(fields["precip"].sum()), 0.0)
         self.assertEqual(geo["window"], (0, 0))
         self.assertFalse(publish.fill_missing_analysis_precip("ecmwf", 0, {"t2m": fields["t2m"]}, {"window": None}))
+
+
+    def test_read_json_rejects_malformed_and_non_object_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "value.json"
+            path.write_text("{broken", encoding="utf-8")
+            self.assertIsNone(publish.read_json(path))
+            path.write_text('["not", "an", "object"]', encoding="utf-8")
+            self.assertIsNone(publish.read_json(path))
+            path.write_text('{"ok": true}', encoding="utf-8")
+            self.assertEqual(publish.read_json(path), {"ok": True})
+
+    def test_parse_iso_rejects_non_string_timestamp(self):
+        for value in (None, 123, [], {}):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    publish.parse_iso(value)
+
+    def test_disk_cycle_checks_hash_compressed_size_and_gzip_payload(self):
+        run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            cycle = publish.write_cycle(site, "ecmwf", sample_pack(run))
+            self.assertTrue(publish.disk_cycle_ok(cycle, "ecmwf", run))
+
+            target = cycle / "t2m.f32.bin"
+            original = target.read_bytes()
+            target.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
+            self.assertFalse(publish.disk_cycle_ok(cycle, "ecmwf", run))
+
+            target.write_bytes(original)
+            meta_path = cycle / "meta.json"
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta["digests"]["t2m"]["bytes"] += 1
+            meta_path.write_text(json.dumps(meta), encoding="utf-8")
+            self.assertFalse(publish.disk_cycle_ok(cycle, "ecmwf", run))
+
+            meta["digests"]["t2m"]["bytes"] -= 1
+            meta_path.write_text(json.dumps(meta), encoding="utf-8")
+            target.write_bytes(b"not a gzip stream")
+            self.assertFalse(publish.disk_cycle_ok(cycle, "ecmwf", run))
+
+    def test_disk_cycle_rejects_wrong_uncompressed_field_size(self):
+        run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            cycle = publish.write_cycle(site, "gfs", sample_pack(run))
+            target = cycle / "lit.f32.bin"
+            payload = gzip.compress(b"too short")
+            target.write_bytes(payload)
+            meta_path = cycle / "meta.json"
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta["digests"]["lit"] = {
+                "sha256": publish.sha256(payload),
+                "bytes": len(payload),
+            }
+            meta_path.write_text(json.dumps(meta), encoding="utf-8")
+            self.assertFalse(publish.disk_cycle_ok(cycle, "gfs", run))
+
+    def test_fetch_range_requires_http_206_content_range_and_exact_size(self):
+        class Response:
+            def __init__(self, status, headers, body):
+                self.status = status
+                self.headers = headers
+                self.body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self.body
+
+        with patch("publish.urllib.request.urlopen", return_value=Response(
+            206, {"Content-Range": "bytes 10-13/100"}, b"data"
+        )):
+            self.assertEqual(publish.fetch_range("https://example.test/data", 10, 14), b"data")
+
+        cases = (
+            Response(200, {"Content-Range": "bytes 10-13/100"}, b"data"),
+            Response(206, {"Content-Range": "bytes 9-13/100"}, b"data"),
+            Response(206, {"Content-Range": "bytes 10-13/100"}, b"dat"),
+        )
+        for response in cases:
+            with self.subTest(status=response.status, headers=response.headers, body=response.body):
+                with patch("publish.urllib.request.urlopen", return_value=response):
+                    with self.assertRaises(RuntimeError):
+                        publish.fetch_range("https://example.test/data", 10, 14)
+
+    def test_publish_model_recovers_from_invalid_fail_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            status_dir = site / "ecmwf"
+            status_dir.mkdir()
+            (status_dir / "status.json").write_text(
+                json.dumps({"failCount": "not-a-number"}), encoding="utf-8"
+            )
+            with patch.object(publish, "discover", side_effect=RuntimeError("test discovery failure")):
+                result = publish.publish_model(site, "ecmwf")
+            self.assertEqual(result, "failed")
+            status = publish.read_json(status_dir / "status.json")
+            self.assertEqual(status["failCount"], 1)
 
 
 if __name__ == "__main__":
