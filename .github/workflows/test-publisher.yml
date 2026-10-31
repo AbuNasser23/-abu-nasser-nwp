@@ -6,6 +6,7 @@ on:
       - main
       - fix/ecmwf-gusts-fallback-144h
       - fix/automatic-main-validation-144h
+      - feat/publisher-240h-validated
     paths:
       - "publish.py"
       - "test_publish.py"

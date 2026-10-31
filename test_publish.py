@@ -8,8 +8,8 @@ import numpy as np
 import publish
 
 
-def sample_pack(run: datetime) -> dict:
-    shape = (len(publish.hours()), publish.NY, publish.NX)
+def sample_pack(run: datetime, model: str = "ecmwf") -> dict:
+    shape = (len(publish.hours(model)), publish.NY, publish.NX)
     lats = [round(publish.SOUTH + 0.25 * j, 2) for j in range(publish.NY)]
     lons = [round(publish.WEST + 0.25 * i, 2) for i in range(publish.NX)]
     fields = {name: np.zeros(shape, dtype=np.float32) for name in publish.CORE}
@@ -24,15 +24,27 @@ def sample_pack(run: datetime) -> dict:
     fields["u10"][:] = 12
     fields["lit"] = np.full(shape, np.nan, dtype=np.float32)
     fields["lifted"] = np.full(shape, np.nan, dtype=np.float32)
-    return {"run": run, "lats": lats, "lons": lons, "fields": fields}
+    return {"model": model, "run": run, "lats": lats, "lons": lons, "fields": fields}
 
 
 class PublishTests(unittest.TestCase):
-    def test_horizon_stops_at_144(self):
-        self.assertEqual(publish.hours()[0], 0)
-        self.assertEqual(publish.hours()[-1], 144)
-        self.assertNotIn(150, publish.hours())
-        self.assertEqual(len(publish.hours()), 49)
+    def test_ecmwf_native_horizon_is_240h(self):
+        steps = publish.hours("ecmwf")
+        self.assertEqual(steps[0], 0)
+        self.assertEqual(steps[-1], 240)
+        self.assertEqual(len(steps), 65)
+        self.assertEqual(steps[:49], list(range(0, 145, 3)))
+        self.assertEqual(steps[49:], list(range(150, 241, 6)))
+
+    def test_gfs_native_horizon_is_240h(self):
+        steps = publish.hours("gfs")
+        self.assertEqual(steps[0], 0)
+        self.assertEqual(steps[-1], 240)
+        self.assertEqual(len(steps), 61)
+        self.assertEqual(steps[:41], list(range(0, 121, 3)))
+        self.assertEqual(steps[41:], list(range(126, 241, 6)))
+        self.assertNotIn(123, steps)
+        self.assertIn(144, steps)
 
     def test_pointer_stays_until_cycle_is_readable(self):
         run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
@@ -51,9 +63,9 @@ class PublishTests(unittest.TestCase):
         second = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
         with tempfile.TemporaryDirectory() as tmp:
             site = Path(tmp)
-            publish.write_cycle(site, "gfs", sample_pack(first))
+            publish.write_cycle(site, "gfs", sample_pack(first, "gfs"))
             publish.flip_pointer(site, "gfs", first, "test")
-            publish.write_cycle(site, "gfs", sample_pack(second))
+            publish.write_cycle(site, "gfs", sample_pack(second, "gfs"))
             publish.flip_pointer(site, "gfs", second, "test")
             publish.prune(site, "gfs", 2)
             current = publish.read_json(site / "gfs" / "current.json")
@@ -62,19 +74,23 @@ class PublishTests(unittest.TestCase):
             names = sorted(path.name for path in (site / "gfs" / "cycles").iterdir())
             self.assertEqual(names, ["20261029T12Z", "20261030T00Z"])
 
-    def test_rejected_meta_does_not_claim_240h(self):
-        meta = {
-            "model": "ecmwf",
-            "nx": 173,
-            "ny": 137,
-            "nT": 65,
-            "run": "2026-10-30T00:00:00Z",
-            "times": [],
-            "horizonHours": 240,
-            "fields": list(publish.CORE),
-        }
-        with self.assertRaises(RuntimeError):
-            publish.validate_meta(meta, "ecmwf")
+    def test_meta_accepts_240h_and_rejects_144h(self):
+        run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
+        for model in ("ecmwf", "gfs"):
+            meta = {
+                "model": model,
+                "nx": publish.NX,
+                "ny": publish.NY,
+                "nT": len(publish.hours(model)),
+                "run": publish.iso_of(run),
+                "times": publish.expected_times(run, model),
+                "horizonHours": 240,
+                "fields": list(publish.CORE),
+            }
+            publish.validate_meta(meta, model)
+            meta["horizonHours"] = 144
+            with self.assertRaises(RuntimeError):
+                publish.validate_meta(meta, model)
 
     def test_ecmwf_missing_gusts_gets_explicit_wind_based_estimate(self):
         fields = {
