@@ -27,7 +27,7 @@ from eccodes import codes_get, codes_get_values, codes_new_from_message, codes_r
 SOUTH, NORTH, WEST, EAST = -2.0, 32.0, 32.0, 75.0
 NX, NY = 173, 137
 UA = "abusnasir-obs/1.0"
-HORIZON = 144
+HORIZON = 240
 KEEP_DEFAULT = 2
 CORE = (
     "t2m", "td2m", "rh2m", "mslp", "u10", "v10", "gusts", "precip", "clouds", "cape",
@@ -52,7 +52,9 @@ ECMWF_PL = {"t": "t", "r": "rh", "gh": "z", "u": "u", "v": "v"}
 
 
 def hours() -> list[int]:
-    return list(range(0, HORIZON + 1, 3))
+    # Keep 3-hourly detail through +144h, then follow both providers'
+    # 6-hourly extended-range cadence through +240h.
+    return list(range(0, 145, 3)) + list(range(150, HORIZON + 1, 6))
 
 
 def utcnow() -> datetime:
@@ -174,7 +176,7 @@ def cycle_steps_ready(model: str, run: datetime) -> bool:
 
 
 def discover(model: str, now: datetime | None = None) -> datetime:
-    """Newest cycle whose every 3-hour step through +144h is actually listed."""
+    """Newest cycle with every required step through +240h actually listed."""
     now = now or utcnow()
     if model not in ("ecmwf", "gfs"):
         raise RuntimeError(f"unknown model {model}")
@@ -717,7 +719,7 @@ def validate_meta(meta: dict, model: str) -> None:
     if meta.get("times") != expected_times(run):
         raise RuntimeError("valid times do not match the run")
     if meta.get("horizonHours") != HORIZON:
-        raise RuntimeError("horizon is not 144h")
+        raise RuntimeError("horizon is not 240h")
     for name in CORE:
         if name not in meta.get("fields", []):
             raise RuntimeError(f"meta missing {name}")
