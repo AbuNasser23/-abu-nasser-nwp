@@ -3,7 +3,7 @@ name: Test NWP Publisher
 on:
   push:
     branches:
-      - fix/ecmwf-gusts-fallback-144h
+      - feat/publisher-240h
     paths:
       - "publish.py"
       - "test_publish.py"
