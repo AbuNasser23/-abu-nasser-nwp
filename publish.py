@@ -742,6 +742,11 @@ def pointer_matches(site: Path, model: str, run: datetime) -> bool:
         return False
 
 
+def current_cycle_ok(site: Path, model: str, run: datetime) -> bool:
+    """Skip only when the pointer and its on-disk payload satisfy today's schema."""
+    return pointer_matches(site, model, run) and disk_cycle_ok(cycle_dir(site, model, run), model, run)
+
+
 def disk_cycle_ok(path: Path, model: str, run: datetime) -> bool:
     meta = read_json(path / "meta.json")
     if not meta:
@@ -887,8 +892,8 @@ def publish_model(site: Path, model: str, *, keep: int = KEEP_DEFAULT, now: date
     run = None
     try:
         run = discover(model, now)
-        if pointer_matches(site, model, run):
-            print(f"{model} already published {iso_of(run)}")
+        if current_cycle_ok(site, model, run):
+            print(f"{model} already published with valid {HORIZON}h payload {iso_of(run)}")
             return "skip"
         if backoff_active(site, model, run):
             print(f"{model} backoff until {(read_json(site / model / 'status.json') or {}).get('nextAttempt')}")
