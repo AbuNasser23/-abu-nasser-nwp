@@ -298,6 +298,22 @@ def convert_gfs(name: str, field: np.ndarray) -> np.ndarray:
     return field
 
 
+def fill_missing_ecmwf_gusts(fields: dict[str, np.ndarray]) -> bool:
+    """Estimate missing gusts from 10 m wind; return True when an estimate is added.
+
+    ECMWF Open Data does not expose 10fg at every forecast step. The 1.3
+    gust factor is a documented fallback proxy, not a model-provided gust.
+    Wind components are already converted to km/h by convert_ecmwf().
+    """
+    if "gusts" in fields:
+        return False
+    if "u10" not in fields or "v10" not in fields:
+        return False
+    speed = np.hypot(fields["u10"], fields["v10"])
+    fields["gusts"] = (np.round(speed * 1.3 * 10) / 10).astype(np.float32)
+    return True
+
+
 def finish_derived(fields: dict[str, np.ndarray]) -> None:
     if "t2m" in fields and "td2m" in fields and "rh2m" not in fields:
         fields["rh2m"] = rh_from_dew(fields["t2m"], fields["td2m"])
@@ -564,6 +580,8 @@ def assemble(model: str, run: datetime) -> dict:
         if fill_missing_analysis_precip(model, hour, fields, geo):
             notes.append("gfs +0h APCP is absent at analysis; precip stored as zeros")
         if model == "ecmwf":
+            if fill_missing_ecmwf_gusts(fields):
+                notes.append(f"ECMWF gusts estimated from 10 m wind at +{hour}h (1.3 factor; not provider gust data)")
             tp = fields.get("precip")
             if tp is not None:
                 step_mm = tp * 1000.0 if prev_tp is None else (tp - prev_tp) * 1000.0
@@ -685,6 +703,7 @@ def meta_of(model: str, pack: dict, digests: dict) -> dict:
         "litReady": False,
         "fields": list(pack["fields"]),
         "digests": digests,
+        "qualityNotes": pack.get("notes", []),
         "horizonHours": HORIZON,
     }
 
