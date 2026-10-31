@@ -44,7 +44,7 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(steps[:41], list(range(0, 121, 3)))
         self.assertEqual(steps[41:], list(range(126, 241, 6)))
         self.assertNotIn(123, steps)
-        self.assertNotIn(144, steps)
+        self.assertIn(144, steps)
 
     def test_pointer_stays_until_cycle_is_readable(self):
         run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
