@@ -28,11 +28,15 @@ def sample_pack(run: datetime) -> dict:
 
 
 class PublishTests(unittest.TestCase):
-    def test_horizon_stops_at_144(self):
-        self.assertEqual(publish.hours()[0], 0)
-        self.assertEqual(publish.hours()[-1], 144)
-        self.assertNotIn(150, publish.hours())
-        self.assertEqual(len(publish.hours()), 49)
+    def test_horizon_uses_3h_then_6h_steps_through_240(self):
+        times = publish.hours()
+        self.assertEqual(times[0], 0)
+        self.assertEqual(times[48], 144)
+        self.assertEqual(times[49], 150)
+        self.assertEqual(times[-1], 240)
+        self.assertEqual(len(times), 65)
+        self.assertTrue(all(b - a == 3 for a, b in zip(times[:49], times[1:49])))
+        self.assertTrue(all(b - a == 6 for a, b in zip(times[48:], times[49:])))
 
     def test_pointer_stays_until_cycle_is_readable(self):
         run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
@@ -62,17 +66,20 @@ class PublishTests(unittest.TestCase):
             names = sorted(path.name for path in (site / "gfs" / "cycles").iterdir())
             self.assertEqual(names, ["20261029T12Z", "20261030T00Z"])
 
-    def test_rejected_meta_does_not_claim_240h(self):
+    def test_meta_accepts_240h_and_rejects_144h(self):
+        run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
         meta = {
             "model": "ecmwf",
-            "nx": 173,
-            "ny": 137,
-            "nT": 65,
-            "run": "2026-10-30T00:00:00Z",
-            "times": [],
+            "nx": publish.NX,
+            "ny": publish.NY,
+            "nT": len(publish.hours()),
+            "run": publish.iso_of(run),
+            "times": publish.expected_times(run),
             "horizonHours": 240,
             "fields": list(publish.CORE),
         }
+        publish.validate_meta(meta, "ecmwf")
+        meta["horizonHours"] = 144
         with self.assertRaises(RuntimeError):
             publish.validate_meta(meta, "ecmwf")
 
