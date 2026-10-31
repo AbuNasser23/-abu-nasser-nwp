@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: validate-live-nwp-cycles
+  group: validate-live-nwp-cycles-240h-native
   cancel-in-progress: true
 
 jobs:
