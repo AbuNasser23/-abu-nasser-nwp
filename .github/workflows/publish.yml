@@ -35,7 +35,7 @@ jobs:
           python -c "import eccodes; print('ecCodes OK')"
 
       - name: Run Publisher Script
-        run: python publish.py
+        run: python publish.py --model ecmwf --site GITE
 
       - name: Commit and push changes
         run: |
