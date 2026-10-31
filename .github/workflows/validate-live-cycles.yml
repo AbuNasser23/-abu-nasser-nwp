@@ -54,8 +54,9 @@ jobs:
               pointer = publish.read_json(root / model / "current.json")
               if not pointer or pointer.get("complete") is not True:
                   raise SystemExit(f"{model}: current pointer is not complete")
-              if pointer.get("horizonHours") != 240 or pointer.get("nT") != 65:
-                  raise SystemExit(f"{model}: expected 240h / 65 time steps")
+              expected_steps = 65 if model == "ecmwf" else 61
+              if pointer.get("horizonHours") != 240 or pointer.get("nT") != expected_steps:
+                  raise SystemExit(f"{model}: expected 240h / {expected_steps} native time steps")
               from datetime import datetime
               run = publish.parse_iso(pointer["run"])
               cycle = root / model / "cycles" / publish.stamp_of(run)
