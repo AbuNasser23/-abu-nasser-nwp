@@ -129,11 +129,10 @@ def fetch_range(url: str, start: int, end: int) -> bytes:
             with urllib.request.urlopen(req, timeout=90) as res:
                 if res.status != 206:
                     raise RuntimeError(f"range request expected HTTP 206, got {res.status} {url}")
-                expected_range = f"bytes {start}-{end - 1}/"
                 content_range = res.headers.get("Content-Range", "")
-                if not content_range.startswith(expected_range):
+                if re.fullmatch(rf"bytes {start}-{end - 1}/(?:[0-9]+|\\*)", content_range) is None:
                     raise RuntimeError(
-                        f"invalid Content-Range {content_range!r}; expected {expected_range}*"
+                        f"invalid Content-Range {content_range!r} for requested bytes {start}-{end - 1}"
                     )
                 body = res.read()
                 if len(body) != end - start:
@@ -780,12 +779,12 @@ def disk_cycle_ok(path: Path, model: str, run: datetime) -> bool:
                 return False
             try:
                 raw = gzip.decompress(payload)
-            except (OSError, EOFError, gzip.BadGzipFile):
+            except Exception:
                 return False
             if len(raw) != expected_raw_bytes:
                 return False
         return True
-    except (OSError, RuntimeError, TypeError, ValueError, KeyError, OverflowError):
+    except Exception:
         return False
 
 
