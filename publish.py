@@ -27,7 +27,7 @@ from eccodes import codes_get, codes_get_values, codes_new_from_message, codes_r
 SOUTH, NORTH, WEST, EAST = -2.0, 32.0, 32.0, 75.0
 NX, NY = 173, 137
 UA = "abusnasir-obs/1.0"
-HORIZON = 144
+HORIZON = 240
 KEEP_DEFAULT = 2
 CORE = (
     "t2m", "td2m", "rh2m", "mslp", "u10", "v10", "gusts", "precip", "clouds", "cape",
@@ -51,8 +51,13 @@ ECMWF_SURFACE = {
 ECMWF_PL = {"t": "t", "r": "rh", "gh": "z", "u": "u", "v": "v"}
 
 
-def hours() -> list[int]:
-    return list(range(0, HORIZON + 1, 3))
+def hours(model: str) -> list[int]:
+    """Native deterministic output steps; never synthesize missing forecast hours."""
+    if model == "ecmwf":
+        return list(range(0, 145, 3)) + list(range(150, HORIZON + 1, 6))
+    if model == "gfs":
+        return list(range(0, 121, 3)) + list(range(126, HORIZON + 1, 6))
+    raise RuntimeError(f"unknown model {model}")
 
 
 def utcnow() -> datetime:
@@ -79,8 +84,8 @@ def candidates(model: str, now: datetime, lookback: int = 8) -> list[datetime]:
     return [cur - timedelta(hours=step * i) for i in range(lookback)]
 
 
-def expected_times(run: datetime) -> list[str]:
-    return [iso_of(run + timedelta(hours=hour)) for hour in hours()]
+def expected_times(run: datetime, model: str) -> list[str]:
+    return [iso_of(run + timedelta(hours=hour)) for hour in hours(model)]
 
 
 def head_ok(url: str, timeout: int = 25) -> bool:
@@ -158,7 +163,7 @@ def step_marker(model: str, run: datetime, hour: int) -> str:
 
 
 def cycle_steps_ready(model: str, run: datetime) -> bool:
-    urls = [step_marker(model, run, hour) for hour in hours()]
+    urls = [step_marker(model, run, hour) for hour in hours(model)]
     ok = 0
     lock = threading.Lock()
 
@@ -174,7 +179,7 @@ def cycle_steps_ready(model: str, run: datetime) -> bool:
 
 
 def discover(model: str, now: datetime | None = None) -> datetime:
-    """Newest cycle whose every 3-hour step through +144h is actually listed."""
+    """Newest cycle with every native forecast step through +240h actually listed."""
     now = now or utcnow()
     if model not in ("ecmwf", "gfs"):
         raise RuntimeError(f"unknown model {model}")
@@ -183,7 +188,7 @@ def discover(model: str, now: datetime | None = None) -> datetime:
             continue
         if cycle_steps_ready(model, run):
             return run
-    raise RuntimeError(f"no complete {model} cycle through +{HORIZON}h")
+    raise RuntimeError(f"no complete {model} cycle through +{HORIZON}h at native steps")
 
 
 def ecmwf_want(row: dict) -> str | None:
@@ -571,7 +576,7 @@ def assemble(model: str, run: datetime) -> dict:
     prev_tp = None
     windows = []
     notes = []
-    for hour in hours():
+    for hour in hours(model):
         fields, geo = pull_ecmwf_step(run, hour) if model == "ecmwf" else decode_gfs_step(pull_gfs_blob(run, hour))
         if lats is None:
             lats, lons = geo["lats"], geo["lons"]
@@ -608,7 +613,7 @@ def assemble(model: str, run: datetime) -> dict:
     empty = np.full((len(frames), len(lats), len(lons)), np.nan, dtype=np.float32)
     stack["lit"] = empty.copy()
     stack["lifted"] = empty.copy()
-    pack = {"run": run, "lats": lats, "lons": lons, "fields": stack}
+    pack = {"model": model, "run": run, "lats": lats, "lons": lons, "fields": stack}
     if notes:
         pack["notes"] = notes
     return pack
@@ -671,7 +676,7 @@ def read_json(path: Path) -> dict | None:
 
 def bundle_files(pack: dict) -> tuple[dict[str, bytes], dict]:
     run = pack["run"]
-    times = expected_times(run)
+    times = expected_times(run, model)
     files: dict[str, bytes] = {}
     digests = {}
     for name, values in pack["fields"].items():
@@ -685,7 +690,7 @@ def bundle_files(pack: dict) -> tuple[dict[str, bytes], dict]:
 
 def meta_of(model: str, pack: dict, digests: dict) -> dict:
     run = pack["run"]
-    times = expected_times(run)
+    times = expected_times(run, model)
     source = "ECMWF Open Data · IFS 0.25° مباشرة" if model == "ecmwf" else "NOAA GFS 0.25° مباشرة"
     label = "ECMWF IFS" if model == "ecmwf" else "GFS"
     return {
@@ -711,10 +716,10 @@ def meta_of(model: str, pack: dict, digests: dict) -> dict:
 def validate_meta(meta: dict, model: str) -> None:
     if meta.get("model") != model:
         raise RuntimeError("model mismatch")
-    if meta.get("nx") != NX or meta.get("ny") != NY or meta.get("nT") != len(hours()):
+    if meta.get("nx") != NX or meta.get("ny") != NY or meta.get("nT") != len(hours(model)):
         raise RuntimeError("grid or step count mismatch")
     run = parse_iso(meta["run"])
-    if meta.get("times") != expected_times(run):
+    if meta.get("times") != expected_times(run, model):
         raise RuntimeError("valid times do not match the run")
     if meta.get("horizonHours") != HORIZON:
         raise RuntimeError("horizon is not 144h")
@@ -777,7 +782,7 @@ def write_cycle(site: Path, model: str, pack: dict) -> Path:
         "horizonHours": HORIZON,
         "nx": NX,
         "ny": NY,
-        "nT": len(hours()),
+        "nT": len(hours(model)),
         "source": meta["source"],
         "fetchedAt": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "files": digests,
@@ -807,7 +812,7 @@ def flip_pointer(site: Path, model: str, run: datetime, source: str) -> None:
         "run": iso_of(run),
         "path": f"{model}/cycles/{stamp_of(run)}",
         "complete": True,
-        "nT": len(hours()),
+        "nT": len(hours(model)),
         "nx": NX,
         "ny": NY,
         "horizonHours": HORIZON,
