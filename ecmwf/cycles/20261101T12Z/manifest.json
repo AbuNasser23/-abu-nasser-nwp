@@ -1,0 +1,169 @@
+{
+  "model": "ecmwf",
+  "run": "2026-11-01T12:00:00Z",
+  "complete": true,
+  "horizonHours": 240,
+  "nx": 173,
+  "ny": 137,
+  "nT": 65,
+  "source": "ECMWF Open Data \u00b7 IFS 0.25\u00b0 \u0645\u0628\u0627\u0634\u0631\u0629",
+  "fetchedAt": "2026-11-01T21:31:01Z",
+  "files": {
+    "t2m": {
+      "sha256": "7659c28ddfc6e0304a0fe3fd2c0023ba5f723a87f55d492b521d8d9f6206ee77",
+      "bytes": 1311809
+    },
+    "td2m": {
+      "sha256": "3304efa86d9381c7bcc9ae790b9e9aaaf173d585e80bdfcc6d80815eb974ccb0",
+      "bytes": 1407247
+    },
+    "rh2m": {
+      "sha256": "5a21abe04bcf03686448cfcd6363700d522e16221ce3329a0aa34821685575f7",
+      "bytes": 1366427
+    },
+    "mslp": {
+      "sha256": "4a7ffca68dec04941528d64f437196382594771a4cf44cbcdbb34b1bee036abc",
+      "bytes": 1226662
+    },
+    "u10": {
+      "sha256": "39aff1229606795b3490ec1a7cbcde3cc77ab4fd0fffba84219e0c5ee822bb01",
+      "bytes": 2415920
+    },
+    "v10": {
+      "sha256": "35adce759ebfb0180715a5383e48894d1080e92ce3b7528ca16738a501c5bea9",
+      "bytes": 2404838
+    },
+    "gusts": {
+      "sha256": "bf5c03fb98d35d77f76f06fd7dab3dee296c0f94826745b10457c1c31cc1a9af",
+      "bytes": 2180368
+    },
+    "precip": {
+      "sha256": "2e976622939f8b8a4dfdd3d899476ee46a46aedeceb04028b9c4219b56354513",
+      "bytes": 379218
+    },
+    "clouds": {
+      "sha256": "d4b073fad49590956832597a306207b2b967ab8c3a0a34d9d482a858fbb563ca",
+      "bytes": 1174699
+    },
+    "cape": {
+      "sha256": "ca4b8d4c3ca990b39b2ed22af5f010d63dba7c2628c68da6eeb30f424ddf920f",
+      "bytes": 1693478
+    },
+    "t850": {
+      "sha256": "d224f10323219ce1acf8e68d38ea7182b1e258f835d6382da2cac0ff7748977e",
+      "bytes": 1003542
+    },
+    "rh850": {
+      "sha256": "ae530157e58c6c084881b561f2507003e78dbda3329f72d03a7ca8037e2fd4e7",
+      "bytes": 1374041
+    },
+    "td850": {
+      "sha256": "d80a1ef0b9ae3881e8fa13d16d893331af1686d74367a0580a74dce1ea1a4c76",
+      "bytes": 1912554
+    },
+    "z850": {
+      "sha256": "cbdab6104386974c4ccdfca4ae34d60fc1f6ae7de427c8412118d96efeb5d06b",
+      "bytes": 668460
+    },
+    "u850": {
+      "sha256": "01ce7fde4057207dbf4bc6108c0cda25ec6d44e6754b66b4a31406ffa5b0f12f",
+      "bytes": 2164767
+    },
+    "v850": {
+      "sha256": "8658098dd73ade737a385fe20289ef4f17d8ce33ce5117d9411eab1e90db141e",
+      "bytes": 2149486
+    },
+    "t700": {
+      "sha256": "7c32f79556ffe469f314584c5b426e25ff509b2471b1a673742f671109709bb8",
+      "bytes": 902480
+    },
+    "rh700": {
+      "sha256": "7e4321d7a5fcb8630c49520672a60776267ed9c6907045d050251aee1dce4307",
+      "bytes": 1351111
+    },
+    "td700": {
+      "sha256": "8e2e33a7be2a16b9127f750ac893266a39e8439bacb260b5c2d24095d6a53add",
+      "bytes": 1974328
+    },
+    "z700": {
+      "sha256": "381e1ccd507d4db8d0b028ef22d65f4ef05eeb45b439c339e5999cd0e6db304f",
+      "bytes": 570332
+    },
+    "u700": {
+      "sha256": "53b6c65c4df624d8eda2fdf8ccba7bc78e6721a561683e697fd1aeb6d3fc4d83",
+      "bytes": 2189855
+    },
+    "v700": {
+      "sha256": "97ad7feb48e499f45c53f26b1c04d263c36a129b3c50911426441498c0df39ba",
+      "bytes": 2115147
+    },
+    "t500": {
+      "sha256": "298bfa652d5aa9969b541f816f6dd927e2d17e383680d37a8f5a05da47071f1c",
+      "bytes": 860375
+    },
+    "rh500": {
+      "sha256": "dc6ec2a07e2ec038e5ff0660bb37d31ec00943fe246b90c9f661b7111598bfe9",
+      "bytes": 1043924
+    },
+    "z500": {
+      "sha256": "c8f3f91125ace2cc2886b6ad6ea76ee799deea2aac71683bb1fb872d650be7c6",
+      "bytes": 594018
+    },
+    "u500": {
+      "sha256": "b52837466ae06a181ba9ce2c1b1075fccfd4b00b3fa75a71bbc7f5baf259b6d4",
+      "bytes": 2023087
+    },
+    "v500": {
+      "sha256": "2fa5f9bac6ea5cd60a1eecc947e3be1063f021f6453bd9f24500bae7a9b04544",
+      "bytes": 1819446
+    },
+    "t300": {
+      "sha256": "1a3886c0165523181553e814e01a37fd9ea811124289a29206f2925c859c1812",
+      "bytes": 683987
+    },
+    "rh300": {
+      "sha256": "9732ca7949e52254559550e5dcdd49c2eff9aacb9fe24721e7e3067d66745d90",
+      "bytes": 926395
+    },
+    "z300": {
+      "sha256": "6295c1e190d2c4da87db03c9743616db9274d2ef5712a580c6003fe1d08513a1",
+      "bytes": 705439
+    },
+    "u300": {
+      "sha256": "90358761c174f906d1907cce1ffc2b53b0cbaa21feead046459d9d41a26ddac1",
+      "bytes": 1933219
+    },
+    "v300": {
+      "sha256": "a9ec20001e03846851ba97e3105b3da3f047209863489411a885d6fc80b16d7b",
+      "bytes": 1835184
+    },
+    "lit": {
+      "sha256": "4a1e9bbfc8b04132b3d11a2dfe8146cce937ee7bdc2cb83e0eedbd95e5537fe6",
+      "bytes": 6024
+    },
+    "lifted": {
+      "sha256": "4a1e9bbfc8b04132b3d11a2dfe8146cce937ee7bdc2cb83e0eedbd95e5537fe6",
+      "bytes": 6024
+    }
+  },
+  "notes": [
+    "ECMWF gusts estimated from 10 m wind at +93h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +96h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +99h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +102h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +105h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +108h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +111h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +114h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +117h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +120h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +123h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +126h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +129h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +132h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +135h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +138h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +141h (1.3 factor; not provider gust data)",
+    "ECMWF gusts estimated from 10 m wind at +144h (1.3 factor; not provider gust data)"
+  ]
+}
