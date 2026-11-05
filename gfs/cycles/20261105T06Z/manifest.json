@@ -1,0 +1,152 @@
+{
+  "model": "gfs",
+  "run": "2026-11-05T06:00:00Z",
+  "complete": true,
+  "horizonHours": 240,
+  "nx": 173,
+  "ny": 137,
+  "nT": 61,
+  "source": "NOAA GFS 0.25\u00b0 \u0645\u0628\u0627\u0634\u0631\u0629",
+  "fetchedAt": "2026-11-05T12:46:59Z",
+  "files": {
+    "t2m": {
+      "sha256": "727c58b28652e230a78daade789449affa33a046dcb5d25b10cbac301e5896bb",
+      "bytes": 1491001
+    },
+    "td2m": {
+      "sha256": "f8463d9eae6d18d6afd166edad47d09589b8a0728022dcb7feaed85a6a2caf80",
+      "bytes": 1682279
+    },
+    "rh2m": {
+      "sha256": "d28e37ce6efe0900b1e8a648776f76107a4543828d795ef69d2de263bff07f7c",
+      "bytes": 1129454
+    },
+    "mslp": {
+      "sha256": "f618f557cc5a43f1441c7fdc51910b8d4656647581e1dd68e07581e884b39dcb",
+      "bytes": 1096017
+    },
+    "u10": {
+      "sha256": "cd1177a365434ded41b4965f4f1a8cf4f4c5941c5d14fb65bf3bb76dbbab46b5",
+      "bytes": 2338656
+    },
+    "v10": {
+      "sha256": "90d80098390a9f86754a4b026460e775720b58cdba85ba9fd1a2ded71622fe6a",
+      "bytes": 2305039
+    },
+    "gusts": {
+      "sha256": "72a1ac598d5ca793426f527b1f52b36a65439fa14e58f4724a3425238e687735",
+      "bytes": 1610203
+    },
+    "precip": {
+      "sha256": "316f4e9f71c22dc3a47dc834d74d46b00704a7fabd277eb7943709c115cef031",
+      "bytes": 478814
+    },
+    "clouds": {
+      "sha256": "6ed6e1f6e286f461ae8a9892806b981bfc5ce35ee214eb1d6d20f77a83a9b317",
+      "bytes": 1100800
+    },
+    "cape": {
+      "sha256": "a68e4f6fdf30358674e4c3acd956e9734d661c3aa110f92ab53bc8520ea2f777",
+      "bytes": 1747697
+    },
+    "t850": {
+      "sha256": "ab198be46a581afb1852668f0690e91303d29c0d2da66677ba7a2ec6123a25c9",
+      "bytes": 1266925
+    },
+    "rh850": {
+      "sha256": "e40c6ed9ec60375ae23814429e1a31e447620860417a52a42ae6f48743d4fc9f",
+      "bytes": 1246989
+    },
+    "td850": {
+      "sha256": "9f02694ae2776c7721c23cdb60e820b55cf2e8df9fa1e8734b1e301d79622181",
+      "bytes": 1809776
+    },
+    "z850": {
+      "sha256": "59bd25666a974ee86b4774aca54e07b82b5848fd55a5b13c45de813821de3b83",
+      "bytes": 642051
+    },
+    "u850": {
+      "sha256": "2ff431c54233e01047886b3484c00877962f9ccfa8c9e54f332469fdcca4ec5a",
+      "bytes": 2332472
+    },
+    "v850": {
+      "sha256": "354dcb71433bfae31a08af701292a24f87a33fcefb60b9e878663f8023ac072f",
+      "bytes": 2295402
+    },
+    "t700": {
+      "sha256": "a3f1265e3e15cdb11a6e882ca400db8204f2eff9a1d80213acb1276820cc49ba",
+      "bytes": 1088825
+    },
+    "rh700": {
+      "sha256": "c5f8fc1ca84ec8885d15fe5131d88338a8667679c2125e3b140b84c645a5f76f",
+      "bytes": 1240352
+    },
+    "td700": {
+      "sha256": "8fcd9910fb8f97bdba3b320128edc90ef02c87d7462ad10cf6502beb2542ebfc",
+      "bytes": 1861525
+    },
+    "z700": {
+      "sha256": "4a6e1b20f4f3051118c2ad136e47294e0b5c38faa3213a417ffee994a4148e14",
+      "bytes": 599300
+    },
+    "u700": {
+      "sha256": "bcd271fc0ab772b0085a34ee899929b0d8824ca2d038235dc93c99e4517ff3ab",
+      "bytes": 2413400
+    },
+    "v700": {
+      "sha256": "64783741fefb1f4208adf5f58100c115589a5e8c12ae6f8b5ac39b1308b36e26",
+      "bytes": 2346177
+    },
+    "t500": {
+      "sha256": "b2a0658bc9c491b5f6eaada71a166b9ff6c87a966628c5029d7fa32dc3882d70",
+      "bytes": 992649
+    },
+    "rh500": {
+      "sha256": "c1b75893a0dcb8307bcea889489c60a28498df3491b4c1ad325f44991c89af54",
+      "bytes": 1049369
+    },
+    "z500": {
+      "sha256": "f1e8a85a96d04319e8a2ebf94b1b3fa2e477125bd73e58f2f4eb01dbe15183f1",
+      "bytes": 640408
+    },
+    "u500": {
+      "sha256": "c5caa4949ccd7331bb6dede96c231e971aa977694775c6cce3ba84239a2e8466",
+      "bytes": 2181218
+    },
+    "v500": {
+      "sha256": "1dcc9a8de83660d299539719197dbb01fab302ac640c94704d3ef85449bc4544",
+      "bytes": 2032406
+    },
+    "t300": {
+      "sha256": "184521a84f3f1590ca4ddec0c3bafd079f1eb4637a293478d6d216fa85345f17",
+      "bytes": 917905
+    },
+    "rh300": {
+      "sha256": "9e303e67366e6a27f8133fd36228b5ef069ab07047211982d2df1bd9334e00b9",
+      "bytes": 1265758
+    },
+    "z300": {
+      "sha256": "367fd83f14ecf8c4005873ed1cbb3cb05eece421f217c1e6db2effc7fbfdf997",
+      "bytes": 746802
+    },
+    "u300": {
+      "sha256": "f1bdf26f054331098f99189b61adb7fd8f0899f4a9a4546664f0674e4e1baf0e",
+      "bytes": 1944768
+    },
+    "v300": {
+      "sha256": "f0946ec5fce471ddc9fdb3ee0aff6c8fcb25eeded0b6e6b0b10cf24e1128b20e",
+      "bytes": 1857110
+    },
+    "lit": {
+      "sha256": "ceea3f968a5abc54df2b64a890285c08858f523ed5f434fe21dd77e891825713",
+      "bytes": 5656
+    },
+    "lifted": {
+      "sha256": "ceea3f968a5abc54df2b64a890285c08858f523ed5f434fe21dd77e891825713",
+      "bytes": 5656
+    }
+  },
+  "notes": [
+    "gfs +0h APCP is absent at analysis; precip stored as zeros"
+  ]
+}
