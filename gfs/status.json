@@ -1,9 +1,9 @@
 {
   "model": "gfs",
-  "ok": false,
+  "ok": true,
   "run": "2026-11-06T12:00:00Z",
-  "error": "IncompleteRead(382485 bytes read, 148717 more expected)",
-  "failCount": 1,
-  "nextAttempt": "2026-11-06T19:09:33Z",
-  "at": "2026-11-06T18:39:33Z"
+  "error": null,
+  "failCount": 0,
+  "nextAttempt": "2026-11-06T21:38:50Z",
+  "at": "2026-11-06T21:38:50Z"
 }
