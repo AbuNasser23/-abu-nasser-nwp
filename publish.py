@@ -889,7 +889,7 @@ def flip_pointer(site: Path, model: str, run: datetime, source: str) -> None:
         "nx": spec["nx"],
         "ny": spec["ny"],
         "gridSpacing": spec["spacing"],
-        "horizonHours": HORIZON,
+        "horizonHours": horizon_hours(model, run),
         "publishedAt": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": source,
         "previous": prev_run,
