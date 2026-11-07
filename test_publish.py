@@ -133,30 +133,25 @@ class PublishTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 publish.validate_meta(meta, model)
 
-    def test_ecmwf_missing_gusts_gets_explicit_wind_based_estimate(self):
+    def test_ecmwf_missing_gusts_are_nan_not_estimated_from_wind(self):
         fields = {
+            "t2m": np.full((2, 3), 28.0, dtype=np.float32),
             "u10": np.full((2, 3), 12.0, dtype=np.float32),
             "v10": np.full((2, 3), 5.0, dtype=np.float32),
         }
-        self.assertTrue(publish.fill_missing_ecmwf_gusts(fields))
-        expected = round((13.0 * 1.3) * 10) / 10
-        self.assertTrue(np.allclose(fields["gusts"], expected))
+        self.assertTrue(publish.mark_missing_ecmwf_gusts(fields))
         self.assertEqual(fields["gusts"].dtype, np.float32)
+        self.assertTrue(np.isnan(fields["gusts"]).all())
 
-    def test_ecmwf_provider_gusts_are_never_overwritten(self):
+    def test_ecmwf_native_gusts_are_preserved_unchanged(self):
         original = np.full((2, 3), 42.0, dtype=np.float32)
-        fields = {
-            "u10": np.full((2, 3), 12.0, dtype=np.float32),
-            "v10": np.full((2, 3), 5.0, dtype=np.float32),
-            "gusts": original.copy(),
-        }
-        self.assertFalse(publish.fill_missing_ecmwf_gusts(fields))
+        fields = {"t2m": np.ones((2, 3), dtype=np.float32), "gusts": original.copy()}
+        self.assertFalse(publish.mark_missing_ecmwf_gusts(fields))
         self.assertTrue(np.array_equal(fields["gusts"], original))
 
-    def test_missing_gusts_without_wind_components_is_not_fabricated(self):
-        fields = {"u10": np.ones((2, 3), dtype=np.float32)}
-        self.assertFalse(publish.fill_missing_ecmwf_gusts(fields))
-        self.assertNotIn("gusts", fields)
+    def test_ecmwf_gust_mapping_accepts_only_native_10fg(self):
+        self.assertEqual(publish.ecmwf_want({"param": "10fg", "levtype": "sfc"}), "gusts")
+        self.assertIsNone(publish.ecmwf_want({"param": "gust", "levtype": "sfc"}))
 
     def test_gfs_analysis_precip_is_zeros_only(self):
         spec = publish.grid_spec("gfs")
