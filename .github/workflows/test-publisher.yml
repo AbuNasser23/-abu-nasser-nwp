@@ -43,3 +43,27 @@ jobs:
 
       - name: Run publisher unit tests only
         run: python -m unittest -v test_publish.py
+      - name: Smoke-test one live ECMWF 0.1 forecast step
+        run: |
+          python - <<'PY'
+          import publish
+          run = publish.discover("ecmwf")
+          fields, geo = publish.pull_ecmwf_step(run, 0)
+          spec = publish.grid_spec("ecmwf")
+          assert len(geo["lons"]) == spec["nx"], (len(geo["lons"]), spec)
+          assert len(geo["lats"]) == spec["ny"], (len(geo["lats"]), spec)
+          assert "t2m" in fields and "t850" in fields, sorted(fields)
+          print(f"ECMWF live smoke PASS: {publish.iso_of(run)}; grid={len(geo['lons'])}x{len(geo['lats'])}; fields={len(fields)}")
+          PY
+      - name: Smoke-test one live GFS 0.25 forecast step
+        run: |
+          python - <<'PY'
+          import publish
+          run = publish.discover("gfs")
+          fields, geo = publish.decode_gfs_step(publish.pull_gfs_blob(run, 0))
+          spec = publish.grid_spec("gfs")
+          assert len(geo["lons"]) == spec["nx"], (len(geo["lons"]), spec)
+          assert len(geo["lats"]) == spec["ny"], (len(geo["lats"]), spec)
+          assert "t2m" in fields, sorted(fields)
+          print(f"GFS live smoke PASS: {publish.iso_of(run)}; grid={len(geo['lons'])}x{len(geo['lats'])}; fields={len(fields)}")
+          PY
