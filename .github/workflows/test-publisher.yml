@@ -86,7 +86,7 @@ jobs:
           from pathlib import Path
           import publish
 
-          run = publish.discover("ecmwf")
+          run = publish.discover("ecmwf", required_horizon=240)
           pack = publish.assemble("ecmwf", run)
           publish.sanity(pack)
           files, digests = publish.bundle_files(pack)
