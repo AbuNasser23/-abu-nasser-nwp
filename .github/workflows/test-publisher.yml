@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feat/ecmwf-0p1-grid
       - fix/ecmwf-gusts-fallback-144h
       - fix/automatic-main-validation-144h
       - feat/publisher-240h-validated
