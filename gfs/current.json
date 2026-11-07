@@ -1,13 +1,13 @@
 {
   "model": "gfs",
-  "run": "2026-11-07T06:00:00Z",
-  "path": "gfs/cycles/20261107T06Z",
+  "run": "2026-11-07T12:00:00Z",
+  "path": "gfs/cycles/20261107T12Z",
   "complete": true,
   "nT": 61,
   "nx": 173,
   "ny": 137,
   "horizonHours": 240,
-  "publishedAt": "2026-11-07T12:31:23Z",
+  "publishedAt": "2026-11-07T18:29:09Z",
   "source": "NOAA GFS 0.25 AWS",
-  "previous": "2026-11-07T00:00:00Z"
+  "previous": "2026-11-07T06:00:00Z"
 }
