@@ -156,9 +156,13 @@ class PublishTests(unittest.TestCase):
     def test_meta_accepts_native_144h_ecmwf_cycles(self):
         for hour in (6, 18):
             run = datetime(2026, 10, 30, hour, tzinfo=timezone.utc)
-            pack = sample_pack(run, "ecmwf")
-            files, digests = publish.bundle_files(pack)
-            meta = publish.meta_of("ecmwf", pack, digests)
+            pack = {
+                "run": run,
+                "lats": [0.0],
+                "lons": [32.0],
+                "fields": {name: None for name in publish.CORE},
+            }
+            meta = publish.meta_of("ecmwf", pack, {})
             self.assertEqual(meta["horizonHours"], 144)
             self.assertEqual(meta["nT"], 49)
             publish.validate_meta(meta, "ecmwf")
