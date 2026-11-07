@@ -67,3 +67,17 @@ jobs:
           assert "t2m" in fields, sorted(fields)
           print(f"GFS live smoke PASS: {publish.iso_of(run)}; grid={len(geo['lons'])}x{len(geo['lats'])}; fields={len(fields)}")
           PY
+      - name: Validate complete ECMWF 0.1 240-hour cycle without publishing
+        timeout-minutes: 165
+        run: |
+          python - <<'PY'
+          import publish
+          run = publish.discover("ecmwf")
+          pack = publish.assemble("ecmwf", run)
+          publish.sanity(pack)
+          files, digests = publish.bundle_files(pack)
+          total = sum(len(data) for data in files.values())
+          largest = max((len(data), name) for name, data in files.items())
+          print(f"ECMWF FULL CYCLE PASS: run={publish.iso_of(run)} steps={len(publish.hours('ecmwf'))} grid={len(pack['lons'])}x{len(pack['lats'])} fields={len(files)} compressed_total={total} bytes largest={largest[1]}:{largest[0]} bytes")
+          print(f"ECMWF cycle notes: {pack.get('notes', [])}")
+          PY
