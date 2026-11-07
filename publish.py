@@ -319,19 +319,14 @@ def convert_gfs(name: str, field: np.ndarray) -> np.ndarray:
     return field
 
 
-def fill_missing_ecmwf_gusts(fields: dict[str, np.ndarray]) -> bool:
-    """Estimate missing gusts from 10 m wind; return True when an estimate is added.
-
-    ECMWF Open Data does not expose 10fg at every forecast step. The 1.3
-    gust factor is a documented fallback proxy, not a model-provided gust.
-    Wind components are already converted to km/h by convert_ecmwf().
-    """
+def mark_missing_ecmwf_gusts(fields: dict[str, np.ndarray]) -> bool:
+    """Keep the required pack slot without fabricating provider gust values."""
     if "gusts" in fields:
         return False
-    if "u10" not in fields or "v10" not in fields:
-        return False
-    speed = np.hypot(fields["u10"], fields["v10"])
-    fields["gusts"] = (np.round(speed * 1.3 * 10) / 10).astype(np.float32)
+    reference = fields.get("t2m")
+    if reference is None:
+        raise RuntimeError("cannot shape missing ECMWF gust field without t2m")
+    fields["gusts"] = np.full(reference.shape, np.nan, dtype=np.float32)
     return True
 
 
@@ -569,7 +564,20 @@ def pull_ecmwf_step(run: datetime, hour: int) -> tuple[dict[str, np.ndarray], di
     finally:
         codes_release(gid)
     j0, j1, i0, i1, lats, lons = indexes(*meta)
-    fields = {name: convert_ecmwf(name, decode(buf, j0, j1, i0, i1, meta[5])) for name, buf in blobs.items()}
+    fields = {}
+    for name, buf in blobs.items():
+        if name == "gusts":
+            gust_gid = codes_new_from_message(buf)
+            try:
+                param_id = int(codes_get(gust_gid, "paramId"))
+                short_name = str(codes_get(gust_gid, "shortName"))
+            finally:
+                codes_release(gust_gid)
+            if param_id != 49 or short_name != "10fg":
+                raise RuntimeError(
+                    f"ECMWF gust message is not native 10fg (paramId={param_id}, shortName={short_name})"
+                )
+        fields[name] = convert_ecmwf(name, decode(buf, j0, j1, i0, i1, meta[5]))
     lats, lons, fields = orient(lats, lons, fields)
     return fields, {"lats": lats, "lons": lons, "window": None}
 
@@ -608,8 +616,8 @@ def assemble(model: str, run: datetime) -> dict:
         if fill_missing_analysis_precip(model, hour, fields, geo):
             notes.append("gfs +0h APCP is absent at analysis; precip stored as zeros")
         if model == "ecmwf":
-            if fill_missing_ecmwf_gusts(fields):
-                notes.append(f"ECMWF gusts estimated from 10 m wind at +{hour}h (1.3 factor; not provider gust data)")
+            if mark_missing_ecmwf_gusts(fields):
+                notes.append(f"ECMWF native 10fg unavailable at +{hour}h; gusts left NaN (no estimate)")
             tp = fields.get("precip")
             if tp is not None:
                 step_mm = tp * 1000.0 if prev_tp is None else (tp - prev_tp) * 1000.0
