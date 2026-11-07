@@ -64,6 +64,26 @@ class PublishTests(unittest.TestCase):
         self.assertNotIn(123, steps)
         self.assertIn(144, steps)
 
+    def test_ecmwf_all_four_cycles_use_provider_native_horizons(self):
+        for hour in (0, 12):
+            run = datetime(2026, 11, 7, hour, tzinfo=timezone.utc)
+            steps = publish.hours("ecmwf", run)
+            self.assertEqual(publish.horizon_hours("ecmwf", run), 240)
+            self.assertEqual(steps[-1], 240)
+            self.assertEqual(len(steps), 65)
+        for hour in (6, 18):
+            run = datetime(2026, 11, 7, hour, tzinfo=timezone.utc)
+            steps = publish.hours("ecmwf", run)
+            self.assertEqual(publish.horizon_hours("ecmwf", run), 144)
+            self.assertEqual(steps[-1], 144)
+            self.assertEqual(len(steps), 49)
+
+    def test_ecmwf_discovery_candidates_include_four_daily_cycles(self):
+        now = datetime(2026, 11, 8, 9, tzinfo=timezone.utc)
+        found = publish.candidates("ecmwf", now, lookback=4)
+        self.assertEqual([run.hour for run in found], [6, 0, 18, 12])
+        self.assertEqual([run.day for run in found], [8, 8, 7, 7])
+
     def test_same_run_with_legacy_144h_payload_is_not_treated_as_published(self):
         run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
         with tempfile.TemporaryDirectory() as tmp:
