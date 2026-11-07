@@ -9,9 +9,10 @@ import publish
 
 
 def sample_pack(run: datetime, model: str = "ecmwf") -> dict:
-    shape = (len(publish.hours(model)), publish.NY, publish.NX)
-    lats = [round(publish.SOUTH + 0.25 * j, 2) for j in range(publish.NY)]
-    lons = [round(publish.WEST + 0.25 * i, 2) for i in range(publish.NX)]
+    spec = publish.grid_spec(model)
+    shape = (len(publish.hours(model)), spec["ny"], spec["nx"])
+    lats = [round(publish.SOUTH + spec["spacing"] * j, 3) for j in range(spec["ny"])]
+    lons = [round(publish.WEST + spec["spacing"] * i, 3) for i in range(spec["nx"])]
     fields = {name: np.zeros(shape, dtype=np.float32) for name in publish.CORE}
     fields["t2m"][:] = 28
     fields["td2m"][:] = 14
@@ -28,6 +29,23 @@ def sample_pack(run: datetime, model: str = "ecmwf") -> dict:
 
 
 class PublishTests(unittest.TestCase):
+
+    def test_model_grids_are_independent(self):
+        ecmwf = publish.grid_spec("ecmwf")
+        gfs = publish.grid_spec("gfs")
+        self.assertEqual(ecmwf, {"spacing": 0.1, "nx": 431, "ny": 341})
+        self.assertEqual(gfs, {"spacing": 0.25, "nx": 173, "ny": 137})
+
+    def test_ecmwf_indexes_include_surface_and_pressure_levels(self):
+        run = datetime(2026, 11, 7, 0, tzinfo=timezone.utc)
+        urls = publish.step_markers("ecmwf", run, 0)
+        self.assertEqual(len(urls), 2)
+        self.assertTrue(any("-sfc.index" in url and "/0p1/" in url for url in urls))
+        self.assertTrue(any("-pl.index" in url and "/0p1/" in url for url in urls))
+        gfs_urls = publish.step_markers("gfs", run, 0)
+        self.assertEqual(len(gfs_urls), 1)
+        self.assertIn("0p25", gfs_urls[0])
+
     def test_ecmwf_native_horizon_is_240h(self):
         steps = publish.hours("ecmwf")
         self.assertEqual(steps[0], 0)
@@ -101,8 +119,9 @@ class PublishTests(unittest.TestCase):
         for model in ("ecmwf", "gfs"):
             meta = {
                 "model": model,
-                "nx": publish.NX,
-                "ny": publish.NY,
+                "nx": publish.grid_spec(model)["nx"],
+                "ny": publish.grid_spec(model)["ny"],
+                "gridSpacing": publish.grid_spec(model)["spacing"],
                 "nT": len(publish.hours(model)),
                 "run": publish.iso_of(run),
                 "times": publish.expected_times(run, model),
@@ -140,7 +159,8 @@ class PublishTests(unittest.TestCase):
         self.assertNotIn("gusts", fields)
 
     def test_gfs_analysis_precip_is_zeros_only(self):
-        fields = {"t2m": np.ones((publish.NY, publish.NX), dtype=np.float32)}
+        spec = publish.grid_spec("gfs")
+        fields = {"t2m": np.ones((spec["ny"], spec["nx"]), dtype=np.float32)}
         geo = {"window": None}
         self.assertFalse(publish.fill_missing_analysis_precip("gfs", 3, fields, geo))
         self.assertNotIn("precip", fields)
