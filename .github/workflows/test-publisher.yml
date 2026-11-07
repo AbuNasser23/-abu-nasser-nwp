@@ -1,5 +1,7 @@
 name: Test NWP Publisher
 
+# Test-only release upload is opt-in and never changes live current.json pointers.
+
 on:
   push:
     branches:
