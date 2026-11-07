@@ -61,12 +61,23 @@ ECMWF_SURFACE = {
 ECMWF_PL = {"t": "t", "r": "rh", "z": "z", "gh": "z", "u": "u", "v": "v"}
 
 
-def hours(model: str) -> list[int]:
-    """Use each provider's native forecast cadence through +240h."""
+def horizon_hours(model: str, run: datetime | None = None) -> int:
+    """Return the provider-native horizon for this model cycle."""
+    if model == "ecmwf" and run is not None and run.hour in (6, 18):
+        return 144
+    if model in ("ecmwf", "gfs"):
+        return HORIZON
+    raise RuntimeError(f"unknown model {model}")
+
+
+def hours(model: str, run: datetime | None = None) -> list[int]:
+    """Use the native forecast cadence and the selected cycle's native horizon."""
+    horizon = horizon_hours(model, run)
     if model == "ecmwf":
-        return list(range(0, 145, 3)) + list(range(150, HORIZON + 1, 6))
+        early = list(range(0, min(144, horizon) + 1, 3))
+        return early + (list(range(150, horizon + 1, 6)) if horizon > 144 else [])
     if model == "gfs":
-        return list(range(0, 121, 3)) + list(range(126, HORIZON + 1, 6))
+        return list(range(0, 121, 3)) + list(range(126, horizon + 1, 6))
     raise RuntimeError(f"unknown model {model}")
 
 
@@ -88,14 +99,16 @@ def parse_iso(text: str) -> datetime:
 
 
 def candidates(model: str, now: datetime, lookback: int = 8) -> list[datetime]:
-    step = 12 if model == "ecmwf" else 6
+    if model not in ("ecmwf", "gfs"):
+        raise RuntimeError(f"unknown model {model}")
+    step = 6
     hour = (now.hour // step) * step
     cur = now.replace(hour=hour, minute=0, second=0, microsecond=0)
     return [cur - timedelta(hours=step * i) for i in range(lookback)]
 
 
 def expected_times(run: datetime, model: str) -> list[str]:
-    return [iso_of(run + timedelta(hours=hour)) for hour in hours(model)]
+    return [iso_of(run + timedelta(hours=hour)) for hour in hours(model, run)]
 
 
 def head_ok(url: str, timeout: int = 25) -> bool:
@@ -179,7 +192,7 @@ def step_markers(model: str, run: datetime, hour: int) -> list[str]:
 
 
 def cycle_steps_ready(model: str, run: datetime) -> bool:
-    urls = [url for hour in hours(model) for url in step_markers(model, run, hour)]
+    urls = [url for hour in hours(model, run) for url in step_markers(model, run, hour)]
     ok = 0
     lock = threading.Lock()
 
@@ -194,17 +207,27 @@ def cycle_steps_ready(model: str, run: datetime) -> bool:
     return ok == len(urls)
 
 
-def discover(model: str, now: datetime | None = None) -> datetime:
-    """Newest cycle with every required step through +240h actually listed."""
+def discover(
+    model: str,
+    now: datetime | None = None,
+    *,
+    required_horizon: int | None = None,
+) -> datetime:
+    """Newest cycle whose full provider-native forecast horizon is available."""
     now = now or utcnow()
     if model not in ("ecmwf", "gfs"):
         raise RuntimeError(f"unknown model {model}")
     for run in candidates(model, now):
-        if not all(head_ok(url) for url in step_markers(model, run, HORIZON)):
+        horizon = horizon_hours(model, run)
+        if required_horizon is not None and horizon < required_horizon:
+            continue
+        final_hour = hours(model, run)[-1]
+        if not all(head_ok(url) for url in step_markers(model, run, final_hour)):
             continue
         if cycle_steps_ready(model, run):
             return run
-    raise RuntimeError(f"no complete {model} cycle through +{HORIZON}h")
+    target = f"at least +{required_horizon}h" if required_horizon is not None else "its native horizon"
+    raise RuntimeError(f"no complete {model} cycle through {target}")
 
 
 def ecmwf_want(row: dict) -> str | None:
@@ -607,7 +630,7 @@ def assemble(model: str, run: datetime) -> dict:
     prev_tp = None
     windows = []
     notes = []
-    for hour in hours(model):
+    for hour in hours(model, run):
         fields, geo = pull_ecmwf_step(run, hour) if model == "ecmwf" else decode_gfs_step(pull_gfs_blob(run, hour))
         if lats is None:
             lats, lons = geo["lats"], geo["lons"]
@@ -747,7 +770,7 @@ def meta_of(model: str, pack: dict, digests: dict) -> dict:
         "fields": list(pack["fields"]),
         "digests": digests,
         "qualityNotes": pack.get("notes", []),
-        "horizonHours": HORIZON,
+        "horizonHours": horizon_hours(model, run),
     }
 
 
@@ -755,15 +778,16 @@ def validate_meta(meta: dict, model: str) -> None:
     if meta.get("model") != model:
         raise RuntimeError("model mismatch")
     spec = grid_spec(model)
-    if meta.get("nx") != spec["nx"] or meta.get("ny") != spec["ny"] or meta.get("nT") != len(hours(model)):
+    run = parse_iso(meta["run"])
+    expected_horizon = horizon_hours(model, run)
+    if meta.get("nx") != spec["nx"] or meta.get("ny") != spec["ny"] or meta.get("nT") != len(hours(model, run)):
         raise RuntimeError("grid or step count mismatch")
     if meta.get("gridSpacing") != spec["spacing"]:
         raise RuntimeError("grid spacing metadata mismatch")
-    run = parse_iso(meta["run"])
     if meta.get("times") != expected_times(run, model):
         raise RuntimeError("valid times do not match the run")
-    if meta.get("horizonHours") != HORIZON:
-        raise RuntimeError("horizon is not 240h")
+    if meta.get("horizonHours") != expected_horizon:
+        raise RuntimeError(f"horizon is not the native {expected_horizon}h for this cycle")
     for name in CORE:
         if name not in meta.get("fields", []):
             raise RuntimeError(f"meta missing {name}")
@@ -826,11 +850,11 @@ def write_cycle(site: Path, model: str, pack: dict) -> Path:
         "model": model,
         "run": iso_of(run),
         "complete": True,
-        "horizonHours": HORIZON,
+        "horizonHours": horizon_hours(model, run),
         "nx": spec["nx"],
         "ny": spec["ny"],
         "gridSpacing": spec["spacing"],
-        "nT": len(hours(model)),
+        "nT": len(hours(model, run)),
         "source": meta["source"],
         "fetchedAt": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "files": digests,
@@ -861,7 +885,7 @@ def flip_pointer(site: Path, model: str, run: datetime, source: str) -> None:
         "run": iso_of(run),
         "path": f"{model}/cycles/{stamp_of(run)}",
         "complete": True,
-        "nT": len(hours(model)),
+        "nT": len(hours(model, run)),
         "nx": spec["nx"],
         "ny": spec["ny"],
         "gridSpacing": spec["spacing"],
@@ -938,7 +962,7 @@ def publish_model(site: Path, model: str, *, keep: int = KEEP_DEFAULT, now: date
     try:
         run = discover(model, now)
         if current_cycle_ok(site, model, run):
-            print(f"{model} already published with valid {HORIZON}h payload {iso_of(run)}")
+            print(f"{model} already published with valid {horizon_hours(model, run)}h payload {iso_of(run)}")
             return "skip"
         if backoff_active(site, model, run):
             print(f"{model} backoff until {(read_json(site / model / 'status.json') or {}).get('nextAttempt')}")
