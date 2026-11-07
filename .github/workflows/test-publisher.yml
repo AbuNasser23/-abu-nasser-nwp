@@ -14,6 +14,12 @@ on:
       - "test_publish.py"
       - ".github/workflows/test-publisher.yml"
   workflow_dispatch:
+    inputs:
+      upload_release_assets:
+        description: 'Explicitly upload a verified test release (normally leave disabled)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -76,6 +82,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import numpy as np
           from pathlib import Path
           import publish
 
@@ -107,12 +114,16 @@ jobs:
           }
           (out / "manifest.json").write_text(json.dumps(manifest, separators=(",", ":")))
           print(f"ECMWF FULL CYCLE PASS: run={publish.iso_of(run)} steps={len(publish.hours('ecmwf'))} grid={len(pack['lons'])}x{len(pack['lats'])} data_files={len(files)} compressed_total={total} bytes largest={largest[1]}:{largest[0]} bytes")
+          gust_stack = pack["fields"]["gusts"]
+          native_gust_steps = int(np.count_nonzero(np.isfinite(gust_stack).any(axis=(1, 2))))
+          missing_gust_steps = int(gust_stack.shape[0] - native_gust_steps)
+          print(f"ECMWF native 10fg coverage: {native_gust_steps}/{gust_stack.shape[0]} steps; missing={missing_gust_steps} steps left NaN")
           print(f"ECMWF cycle notes: {pack.get('notes', [])}")
           print(f"Release assets prepared: {len(list(out.iterdir()))}")
           PY
 
       - name: Upload ECMWF cycle as a GitHub prerelease asset and verify round-trip
-        if: github.ref == 'refs/heads/feat/ecmwf-0p1-grid'
+        if: github.event_name == 'workflow_dispatch' && inputs.upload_release_assets == true && github.ref == 'refs/heads/feat/ecmwf-0p1-grid'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ecmwf-0p1-storage-test-${{ github.run_id }}
