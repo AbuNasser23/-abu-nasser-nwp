@@ -10,7 +10,7 @@ import publish
 
 def sample_pack(run: datetime, model: str = "ecmwf") -> dict:
     spec = publish.grid_spec(model)
-    shape = (len(publish.hours(model)), spec["ny"], spec["nx"])
+    shape = (len(publish.hours(model, run)), spec["ny"], spec["nx"])
     lats = [round(publish.SOUTH + spec["spacing"] * j, 3) for j in range(spec["ny"])]
     lons = [round(publish.WEST + spec["spacing"] * i, 3) for i in range(spec["nx"])]
     fields = {name: np.zeros(shape, dtype=np.float32) for name in publish.CORE}
@@ -152,6 +152,16 @@ class PublishTests(unittest.TestCase):
             meta["horizonHours"] = 144
             with self.assertRaises(RuntimeError):
                 publish.validate_meta(meta, model)
+
+    def test_meta_accepts_native_144h_ecmwf_cycles(self):
+        for hour in (6, 18):
+            run = datetime(2026, 10, 30, hour, tzinfo=timezone.utc)
+            pack = sample_pack(run, "ecmwf")
+            files, digests = publish.bundle_files(pack)
+            meta = publish.meta_of("ecmwf", pack, digests)
+            self.assertEqual(meta["horizonHours"], 144)
+            self.assertEqual(meta["nT"], 49)
+            publish.validate_meta(meta, "ecmwf")
 
     def test_ecmwf_missing_gusts_are_nan_not_estimated_from_wind(self):
         fields = {
