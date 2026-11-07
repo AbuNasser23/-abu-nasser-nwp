@@ -25,7 +25,17 @@ import numpy as np
 from eccodes import codes_get, codes_get_values, codes_new_from_message, codes_release
 
 SOUTH, NORTH, WEST, EAST = -2.0, 32.0, 32.0, 75.0
-NX, NY = 173, 137
+GRID_SPECS = {
+    "ecmwf": {"spacing": 0.1, "nx": 431, "ny": 341},
+    "gfs": {"spacing": 0.25, "nx": 173, "ny": 137},
+}
+
+
+def grid_spec(model: str) -> dict:
+    try:
+        return GRID_SPECS[model]
+    except KeyError as exc:
+        raise RuntimeError(f"unknown model {model}") from exc
 UA = "abusnasir-obs/1.0"
 HORIZON = 240
 KEEP_DEFAULT = 2
@@ -48,15 +58,26 @@ ECMWF_SURFACE = {
     "tcc": "clouds",
     "mucape": "cape",
 }
-ECMWF_PL = {"t": "t", "r": "rh", "gh": "z", "u": "u", "v": "v"}
+ECMWF_PL = {"t": "t", "r": "rh", "z": "z", "gh": "z", "u": "u", "v": "v"}
 
 
-def hours(model: str) -> list[int]:
-    """Use each provider's native forecast cadence through +240h."""
+def horizon_hours(model: str, run: datetime | None = None) -> int:
+    """Return the provider-native horizon for this model cycle."""
+    if model == "ecmwf" and run is not None and run.hour in (6, 18):
+        return 144
+    if model in ("ecmwf", "gfs"):
+        return HORIZON
+    raise RuntimeError(f"unknown model {model}")
+
+
+def hours(model: str, run: datetime | None = None) -> list[int]:
+    """Use the native forecast cadence and the selected cycle's native horizon."""
+    horizon = horizon_hours(model, run)
     if model == "ecmwf":
-        return list(range(0, 145, 3)) + list(range(150, HORIZON + 1, 6))
+        early = list(range(0, min(144, horizon) + 1, 3))
+        return early + (list(range(150, horizon + 1, 6)) if horizon > 144 else [])
     if model == "gfs":
-        return list(range(0, 121, 3)) + list(range(126, HORIZON + 1, 6))
+        return list(range(0, 121, 3)) + list(range(126, horizon + 1, 6))
     raise RuntimeError(f"unknown model {model}")
 
 
@@ -78,14 +99,16 @@ def parse_iso(text: str) -> datetime:
 
 
 def candidates(model: str, now: datetime, lookback: int = 8) -> list[datetime]:
-    step = 12 if model == "ecmwf" else 6
+    if model not in ("ecmwf", "gfs"):
+        raise RuntimeError(f"unknown model {model}")
+    step = 6
     hour = (now.hour // step) * step
     cur = now.replace(hour=hour, minute=0, second=0, microsecond=0)
     return [cur - timedelta(hours=step * i) for i in range(lookback)]
 
 
 def expected_times(run: datetime, model: str) -> list[str]:
-    return [iso_of(run + timedelta(hours=hour)) for hour in hours(model)]
+    return [iso_of(run + timedelta(hours=hour)) for hour in hours(model, run)]
 
 
 def head_ok(url: str, timeout: int = 25) -> bool:
@@ -144,11 +167,13 @@ def fetch_range(url: str, start: int, end: int) -> bytes:
     raise RuntimeError(last)
 
 
-def ecmwf_index_url(run: datetime, hour: int) -> str:
+def ecmwf_index_url(run: datetime, hour: int, level_type: str) -> str:
+    if level_type not in ("sfc", "pl"):
+        raise RuntimeError(f"invalid ECMWF level type {level_type}")
     ymd = run.strftime("%Y%m%d")
     hh = run.strftime("%H")
     stamp = run.strftime("%Y%m%d%H") + "0000"
-    return f"https://data.ecmwf.int/forecasts/{ymd}/{hh}z/ifs/0p25/oper/{stamp}-{hour}h-oper-fc.index"
+    return f"https://data.ecmwf.int/forecasts/{ymd}/{hh}z/ifs/0p1/oper/{stamp}-{hour}h-oper-fc-{level_type}.index"
 
 
 def gfs_idx_url(run: datetime, hour: int) -> str:
@@ -158,12 +183,16 @@ def gfs_idx_url(run: datetime, hour: int) -> str:
     return f"https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{ymd}/{hh}/atmos/gfs.t{hh}z.pgrb2.0p25.f{fff}.idx"
 
 
-def step_marker(model: str, run: datetime, hour: int) -> str:
-    return ecmwf_index_url(run, hour) if model == "ecmwf" else gfs_idx_url(run, hour)
+def step_markers(model: str, run: datetime, hour: int) -> list[str]:
+    if model == "ecmwf":
+        return [ecmwf_index_url(run, hour, level_type) for level_type in ("sfc", "pl")]
+    if model == "gfs":
+        return [gfs_idx_url(run, hour)]
+    raise RuntimeError(f"unknown model {model}")
 
 
 def cycle_steps_ready(model: str, run: datetime) -> bool:
-    urls = [step_marker(model, run, hour) for hour in hours(model)]
+    urls = [url for hour in hours(model, run) for url in step_markers(model, run, hour)]
     ok = 0
     lock = threading.Lock()
 
@@ -178,17 +207,27 @@ def cycle_steps_ready(model: str, run: datetime) -> bool:
     return ok == len(urls)
 
 
-def discover(model: str, now: datetime | None = None) -> datetime:
-    """Newest cycle with every required step through +240h actually listed."""
+def discover(
+    model: str,
+    now: datetime | None = None,
+    *,
+    required_horizon: int | None = None,
+) -> datetime:
+    """Newest cycle whose full provider-native forecast horizon is available."""
     now = now or utcnow()
     if model not in ("ecmwf", "gfs"):
         raise RuntimeError(f"unknown model {model}")
     for run in candidates(model, now):
-        if not head_ok(step_marker(model, run, HORIZON)):
+        horizon = horizon_hours(model, run)
+        if required_horizon is not None and horizon < required_horizon:
+            continue
+        final_hour = hours(model, run)[-1]
+        if not all(head_ok(url) for url in step_markers(model, run, final_hour)):
             continue
         if cycle_steps_ready(model, run):
             return run
-    raise RuntimeError(f"no complete {model} cycle through +{HORIZON}h")
+    target = f"at least +{required_horizon}h" if required_horizon is not None else "its native horizon"
+    raise RuntimeError(f"no complete {model} cycle through {target}")
 
 
 def ecmwf_want(row: dict) -> str | None:
@@ -303,19 +342,14 @@ def convert_gfs(name: str, field: np.ndarray) -> np.ndarray:
     return field
 
 
-def fill_missing_ecmwf_gusts(fields: dict[str, np.ndarray]) -> bool:
-    """Estimate missing gusts from 10 m wind; return True when an estimate is added.
-
-    ECMWF Open Data does not expose 10fg at every forecast step. The 1.3
-    gust factor is a documented fallback proxy, not a model-provided gust.
-    Wind components are already converted to km/h by convert_ecmwf().
-    """
+def mark_missing_ecmwf_gusts(fields: dict[str, np.ndarray]) -> bool:
+    """Keep the required pack slot without fabricating provider gust values."""
     if "gusts" in fields:
         return False
-    if "u10" not in fields or "v10" not in fields:
-        return False
-    speed = np.hypot(fields["u10"], fields["v10"])
-    fields["gusts"] = (np.round(speed * 1.3 * 10) / 10).astype(np.float32)
+    reference = fields.get("t2m")
+    if reference is None:
+        raise RuntimeError("cannot shape missing ECMWF gust field without t2m")
+    fields["gusts"] = np.full(reference.shape, np.nan, dtype=np.float32)
     return True
 
 
@@ -524,20 +558,27 @@ def decode_gfs_step(blob: bytes) -> tuple[dict[str, np.ndarray], dict]:
 
 
 def pull_ecmwf_step(run: datetime, hour: int) -> tuple[dict[str, np.ndarray], dict]:
-    base = ecmwf_index_url(run, hour)[: -len(".index")]
-    rows = []
-    for line in fetch(base + ".index").decode().splitlines():
-        if not line.strip():
-            continue
-        row = json.loads(line)
-        name = ecmwf_want(row)
-        if name:
-            rows.append((name, int(row["_offset"]), int(row["_length"])))
-    if not any(name == "t2m" for name, _, _ in rows):
-        raise RuntimeError(f"ecmwf missing 2t at +{hour}h")
+    rows: list[tuple[str, str, int, int]] = []
+    for level_type in ("sfc", "pl"):
+        index_url = ecmwf_index_url(run, hour, level_type)
+        base = index_url[: -len(".index")]
+        for line in fetch(index_url).decode("utf-8", "replace").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            name = ecmwf_want(row)
+            if name:
+                rows.append((name, base, int(row["_offset"]), int(row["_length"])))
+    if not any(name == "t2m" for name, _, _, _ in rows):
+        raise RuntimeError(f"ecmwf 0.1 missing 2t surface field at +{hour}h")
+    if not any(name == "t850" for name, _, _, _ in rows):
+        raise RuntimeError(f"ecmwf 0.1 missing 850 hPa temperature at +{hour}h")
     blobs: dict[str, bytes] = {}
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futs = {pool.submit(fetch_range, base + ".grib2", off, off + ln): name for name, off, ln in rows}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = {
+            pool.submit(fetch_range, base + ".grib2", off, off + ln): name
+            for name, base, off, ln in rows
+        }
         for fut in as_completed(futs):
             blobs[futs[fut]] = fut.result()
     gid = codes_new_from_message(blobs["t2m"])
@@ -546,7 +587,20 @@ def pull_ecmwf_step(run: datetime, hour: int) -> tuple[dict[str, np.ndarray], di
     finally:
         codes_release(gid)
     j0, j1, i0, i1, lats, lons = indexes(*meta)
-    fields = {name: convert_ecmwf(name, decode(buf, j0, j1, i0, i1, meta[5])) for name, buf in blobs.items()}
+    fields = {}
+    for name, buf in blobs.items():
+        if name == "gusts":
+            gust_gid = codes_new_from_message(buf)
+            try:
+                param_id = int(codes_get(gust_gid, "paramId"))
+                short_name = str(codes_get(gust_gid, "shortName"))
+            finally:
+                codes_release(gust_gid)
+            if param_id != 49 or short_name != "10fg":
+                raise RuntimeError(
+                    f"ECMWF gust message is not native 10fg (paramId={param_id}, shortName={short_name})"
+                )
+        fields[name] = convert_ecmwf(name, decode(buf, j0, j1, i0, i1, meta[5]))
     lats, lons, fields = orient(lats, lons, fields)
     return fields, {"lats": lats, "lons": lons, "window": None}
 
@@ -576,7 +630,7 @@ def assemble(model: str, run: datetime) -> dict:
     prev_tp = None
     windows = []
     notes = []
-    for hour in hours(model):
+    for hour in hours(model, run):
         fields, geo = pull_ecmwf_step(run, hour) if model == "ecmwf" else decode_gfs_step(pull_gfs_blob(run, hour))
         if lats is None:
             lats, lons = geo["lats"], geo["lons"]
@@ -585,8 +639,8 @@ def assemble(model: str, run: datetime) -> dict:
         if fill_missing_analysis_precip(model, hour, fields, geo):
             notes.append("gfs +0h APCP is absent at analysis; precip stored as zeros")
         if model == "ecmwf":
-            if fill_missing_ecmwf_gusts(fields):
-                notes.append(f"ECMWF gusts estimated from 10 m wind at +{hour}h (1.3 factor; not provider gust data)")
+            if mark_missing_ecmwf_gusts(fields):
+                notes.append(f"ECMWF native 10fg unavailable at +{hour}h; gusts left NaN (no estimate)")
             tp = fields.get("precip")
             if tp is not None:
                 step_mm = tp * 1000.0 if prev_tp is None else (tp - prev_tp) * 1000.0
@@ -621,14 +675,18 @@ def assemble(model: str, run: datetime) -> dict:
 
 def sanity(pack: dict) -> None:
     lats, lons = pack["lats"], pack["lons"]
-    if len(lons) != NX or len(lats) != NY:
-        raise RuntimeError(f"grid {len(lons)}x{len(lats)} is not {NX}x{NY}")
+    spec = grid_spec(pack["model"])
+    spacing, nx, ny = spec["spacing"], spec["nx"], spec["ny"]
+    if len(lons) != nx or len(lats) != ny:
+        raise RuntimeError(f"{pack['model']} grid {len(lons)}x{len(lats)} is not {nx}x{ny}")
     if abs(lats[0] - SOUTH) > 0.02 or abs(lats[-1] - NORTH) > 0.02:
         raise RuntimeError("latitude window mismatch")
     if abs(lons[0] - WEST) > 0.02 or abs(lons[-1] - EAST) > 0.02:
         raise RuntimeError("longitude window mismatch")
-    if any(abs((lats[i + 1] - lats[i]) - 0.25) > 0.02 for i in range(0, len(lats) - 1, 10)):
-        raise RuntimeError("latitude spacing is not 0.25")
+    if any(abs((lats[i + 1] - lats[i]) - spacing) > spacing * 0.15 for i in range(0, len(lats) - 1, 10)):
+        raise RuntimeError(f"latitude spacing is not {spacing}")
+    if any(abs((lons[i + 1] - lons[i]) - spacing) > spacing * 0.15 for i in range(0, len(lons) - 1, 10)):
+        raise RuntimeError(f"longitude spacing is not {spacing}")
     t2m = pack["fields"]["t2m"][0]
     finite = np.isfinite(t2m)
     if finite.mean() < 0.9:
@@ -679,8 +737,9 @@ def bundle_files(pack: dict) -> tuple[dict[str, bytes], dict]:
     times = expected_times(run, pack["model"])
     files: dict[str, bytes] = {}
     digests = {}
+    nx, ny = grid_spec(pack["model"])["nx"], grid_spec(pack["model"])["ny"]
     for name, values in pack["fields"].items():
-        if values.shape != (len(times), NY, NX):
+        if values.shape != (len(times), ny, nx):
             raise RuntimeError(f"{name} shape {values.shape}")
         payload = gzip_f32(values)
         files[f"{name}.f32.bin"] = payload
@@ -691,14 +750,16 @@ def bundle_files(pack: dict) -> tuple[dict[str, bytes], dict]:
 def meta_of(model: str, pack: dict, digests: dict) -> dict:
     run = pack["run"]
     times = expected_times(run, model)
-    source = "ECMWF Open Data · IFS 0.25° مباشرة" if model == "ecmwf" else "NOAA GFS 0.25° مباشرة"
-    label = "ECMWF IFS" if model == "ecmwf" else "GFS"
+    spec = grid_spec(model)
+    source = "ECMWF Open Data · IFS 0.1° مباشرة" if model == "ecmwf" else "NOAA GFS 0.25° مباشرة"
+    label = "ECMWF IFS 0.1°" if model == "ecmwf" else "GFS 0.25°"
     return {
         "model": model,
-        "nx": NX,
-        "ny": NY,
+        "nx": spec["nx"],
+        "ny": spec["ny"],
+        "gridSpacing": spec["spacing"],
         "nT": len(times),
-        "nP": NX * NY,
+        "nP": spec["nx"] * spec["ny"],
         "lats": pack["lats"],
         "lons": pack["lons"],
         "times": times,
@@ -709,20 +770,24 @@ def meta_of(model: str, pack: dict, digests: dict) -> dict:
         "fields": list(pack["fields"]),
         "digests": digests,
         "qualityNotes": pack.get("notes", []),
-        "horizonHours": HORIZON,
+        "horizonHours": horizon_hours(model, run),
     }
 
 
 def validate_meta(meta: dict, model: str) -> None:
     if meta.get("model") != model:
         raise RuntimeError("model mismatch")
-    if meta.get("nx") != NX or meta.get("ny") != NY or meta.get("nT") != len(hours(model)):
-        raise RuntimeError("grid or step count mismatch")
+    spec = grid_spec(model)
     run = parse_iso(meta["run"])
+    expected_horizon = horizon_hours(model, run)
+    if meta.get("nx") != spec["nx"] or meta.get("ny") != spec["ny"] or meta.get("nT") != len(hours(model, run)):
+        raise RuntimeError("grid or step count mismatch")
+    if meta.get("gridSpacing") != spec["spacing"]:
+        raise RuntimeError("grid spacing metadata mismatch")
     if meta.get("times") != expected_times(run, model):
         raise RuntimeError("valid times do not match the run")
-    if meta.get("horizonHours") != HORIZON:
-        raise RuntimeError("horizon is not 240h")
+    if meta.get("horizonHours") != expected_horizon:
+        raise RuntimeError(f"horizon is not the native {expected_horizon}h for this cycle")
     for name in CORE:
         if name not in meta.get("fields", []):
             raise RuntimeError(f"meta missing {name}")
@@ -780,14 +845,16 @@ def write_cycle(site: Path, model: str, pack: dict) -> Path:
     atomic_write(partial / "meta.json", json.dumps(meta, separators=(",", ":")).encode())
     for name, payload in files.items():
         atomic_write(partial / name, payload)
+    spec = grid_spec(model)
     manifest = {
         "model": model,
         "run": iso_of(run),
         "complete": True,
-        "horizonHours": HORIZON,
-        "nx": NX,
-        "ny": NY,
-        "nT": len(hours(model)),
+        "horizonHours": horizon_hours(model, run),
+        "nx": spec["nx"],
+        "ny": spec["ny"],
+        "gridSpacing": spec["spacing"],
+        "nT": len(hours(model, run)),
         "source": meta["source"],
         "fetchedAt": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "files": digests,
@@ -812,15 +879,17 @@ def flip_pointer(site: Path, model: str, run: datetime, source: str) -> None:
         raise RuntimeError("refusing to point at an incomplete cycle")
     previous = read_json(site / model / "current.json")
     prev_run = previous.get("run") if previous and previous.get("run") != iso_of(run) else (previous or {}).get("previous")
+    spec = grid_spec(model)
     body = {
         "model": model,
         "run": iso_of(run),
         "path": f"{model}/cycles/{stamp_of(run)}",
         "complete": True,
-        "nT": len(hours(model)),
-        "nx": NX,
-        "ny": NY,
-        "horizonHours": HORIZON,
+        "nT": len(hours(model, run)),
+        "nx": spec["nx"],
+        "ny": spec["ny"],
+        "gridSpacing": spec["spacing"],
+        "horizonHours": horizon_hours(model, run),
         "publishedAt": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": source,
         "previous": prev_run,
@@ -893,7 +962,7 @@ def publish_model(site: Path, model: str, *, keep: int = KEEP_DEFAULT, now: date
     try:
         run = discover(model, now)
         if current_cycle_ok(site, model, run):
-            print(f"{model} already published with valid {HORIZON}h payload {iso_of(run)}")
+            print(f"{model} already published with valid {horizon_hours(model, run)}h payload {iso_of(run)}")
             return "skip"
         if backoff_active(site, model, run):
             print(f"{model} backoff until {(read_json(site / model / 'status.json') or {}).get('nextAttempt')}")
@@ -904,7 +973,7 @@ def publish_model(site: Path, model: str, *, keep: int = KEEP_DEFAULT, now: date
             if pack["run"] != run:
                 raise RuntimeError("assembled run does not match the discovered run")
             dest = write_cycle(site, model, pack)
-        source = "ECMWF Open Data IFS 0.25" if model == "ecmwf" else "NOAA GFS 0.25 AWS"
+        source = "ECMWF Open Data IFS 0.1" if model == "ecmwf" else "NOAA GFS 0.25 AWS"
         flip_pointer(site, model, run, source)
         prune(site, model, keep)
         write_status(site, model, ok=True, run=iso_of(run), error=None, fail_count=0)
