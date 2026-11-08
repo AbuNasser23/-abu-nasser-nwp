@@ -4,10 +4,11 @@
   "path": "ecmwf/cycles/20261107T12Z",
   "complete": true,
   "nT": 65,
-  "nx": 173,
-  "ny": 137,
+  "nx": 431,
+  "ny": 341,
+  "gridSpacing": 0.1,
   "horizonHours": 240,
-  "publishedAt": "2026-11-07T21:31:06Z",
-  "source": "ECMWF Open Data IFS 0.25",
+  "publishedAt": "2026-11-08T00:35:50Z",
+  "source": "ECMWF Open Data IFS 0.1",
   "previous": "2026-11-07T00:00:00Z"
 }
