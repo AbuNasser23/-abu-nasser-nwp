@@ -1,9 +1,12 @@
 name: Test NWP Publisher
 
+# Test-only release upload is opt-in and never changes live current.json pointers.
+
 on:
   push:
     branches:
       - main
+      - feat/ecmwf-0p1-grid
       - fix/ecmwf-gusts-fallback-144h
       - fix/automatic-main-validation-144h
       - feat/publisher-240h-validated
@@ -13,9 +16,15 @@ on:
       - "test_publish.py"
       - ".github/workflows/test-publisher.yml"
   workflow_dispatch:
+    inputs:
+      upload_release_assets:
+        description: 'Explicitly upload a verified test release (normally leave disabled)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: test-nwp-publisher-gusts-fallback
@@ -24,7 +33,7 @@ concurrency:
 jobs:
   tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 180
 
     steps:
       - name: Checkout repository
@@ -42,3 +51,118 @@ jobs:
 
       - name: Run publisher unit tests only
         run: python -m unittest -v test_publish.py
+
+      - name: Smoke-test one live ECMWF 0.1 forecast step
+        run: |
+          python - <<'PY'
+          import publish
+          run = publish.discover("ecmwf")
+          fields, geo = publish.pull_ecmwf_step(run, 0)
+          spec = publish.grid_spec("ecmwf")
+          assert len(geo["lons"]) == spec["nx"], (len(geo["lons"]), spec)
+          assert len(geo["lats"]) == spec["ny"], (len(geo["lats"]), spec)
+          assert "t2m" in fields and "t850" in fields, sorted(fields)
+          print(f"ECMWF live smoke PASS: {publish.iso_of(run)}; grid={len(geo['lons'])}x{len(geo['lats'])}; fields={len(fields)}")
+          PY
+
+      - name: Smoke-test one live GFS 0.25 forecast step
+        run: |
+          python - <<'PY'
+          import publish
+          run = publish.discover("gfs")
+          fields, geo = publish.decode_gfs_step(publish.pull_gfs_blob(run, 0))
+          spec = publish.grid_spec("gfs")
+          assert len(geo["lons"]) == spec["nx"], (len(geo["lons"]), spec)
+          assert len(geo["lats"]) == spec["ny"], (len(geo["lats"]), spec)
+          assert "t2m" in fields, sorted(fields)
+          print(f"GFS live smoke PASS: {publish.iso_of(run)}; grid={len(geo['lons'])}x{len(geo['lats'])}; fields={len(fields)}")
+          PY
+
+      - name: Validate and package complete ECMWF 0.1 240-hour cycle without changing data pointers
+        id: full_cycle
+        timeout-minutes: 165
+        run: |
+          python - <<'PY'
+          import json
+          import numpy as np
+          from pathlib import Path
+          import publish
+
+          run = publish.discover("ecmwf", required_horizon=240)
+          pack = publish.assemble("ecmwf", run)
+          publish.sanity(pack)
+          files, digests = publish.bundle_files(pack)
+          total = sum(len(data) for data in files.values())
+          largest = max((len(data), name) for name, data in files.items())
+
+          out = Path("release-assets")
+          out.mkdir(exist_ok=True)
+          for name, data in files.items():
+              (out / name).write_bytes(data)
+
+          meta = publish.meta_of("ecmwf", pack, digests)
+          (out / "meta.json").write_text(json.dumps(meta, separators=(",", ":")))
+          manifest = {
+              "model": "ecmwf",
+              "run": publish.iso_of(run),
+              "complete": True,
+              "horizonHours": publish.HORIZON,
+              "nx": publish.grid_spec("ecmwf")["nx"],
+              "ny": publish.grid_spec("ecmwf")["ny"],
+              "gridSpacing": publish.grid_spec("ecmwf")["spacing"],
+              "nT": len(publish.hours("ecmwf")),
+              "files": digests,
+              "qualityNotes": pack.get("notes", []),
+          }
+          (out / "manifest.json").write_text(json.dumps(manifest, separators=(",", ":")))
+          print(f"ECMWF FULL CYCLE PASS: run={publish.iso_of(run)} steps={len(publish.hours('ecmwf'))} grid={len(pack['lons'])}x{len(pack['lats'])} data_files={len(files)} compressed_total={total} bytes largest={largest[1]}:{largest[0]} bytes")
+          gust_stack = pack["fields"]["gusts"]
+          native_gust_steps = int(np.count_nonzero(np.isfinite(gust_stack).any(axis=(1, 2))))
+          missing_gust_steps = int(gust_stack.shape[0] - native_gust_steps)
+          print(f"ECMWF native 10fg coverage: {native_gust_steps}/{gust_stack.shape[0]} steps; missing={missing_gust_steps} steps left NaN")
+          print(f"ECMWF cycle notes: {pack.get('notes', [])}")
+          print(f"Release assets prepared: {len(list(out.iterdir()))}")
+          PY
+
+      - name: Upload ECMWF cycle as a GitHub prerelease asset and verify round-trip
+        if: github.ref == 'refs/heads/feat/ecmwf-0p1-grid' && ((github.event_name == 'workflow_dispatch' && inputs.upload_release_assets == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[upload-ecmwf-test-release]')))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ecmwf-0p1-storage-test-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          test -s release-assets/meta.json
+          test -s release-assets/manifest.json
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --title "ECMWF 0.1 storage test ${{ github.run_id }}" \
+            --notes "Experimental storage round-trip test. Not referenced by current.json and not used by the observatory. Source branch: feat/ecmwf-0p1-grid. Model cycle metadata and per-file SHA-256 digests are included." \
+            --prerelease \
+            --target "$GITHUB_SHA"
+
+          mkdir -p /tmp/ecmwf-release-verify
+          gh release download "$RELEASE_TAG" --dir /tmp/ecmwf-release-verify
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/ecmwf-release-verify")
+          manifest = json.loads((root / "manifest.json").read_text())
+          assert manifest["model"] == "ecmwf"
+          assert manifest["complete"] is True
+          assert manifest["gridSpacing"] == 0.1
+          assert manifest["nx"] == 431 and manifest["ny"] == 341
+          assert manifest["nT"] == 65 and manifest["horizonHours"] == 240
+
+          expected = manifest["files"]
+          for name, info in expected.items():
+              path = root / f"{name}.f32.bin"
+              assert path.is_file(), f"missing downloaded asset: {path.name}"
+              data = path.read_bytes()
+              assert len(data) == info["bytes"], f"size mismatch: {path.name}"
+              assert hashlib.sha256(data).hexdigest() == info["sha256"], f"SHA-256 mismatch: {path.name}"
+
+          assert (root / "meta.json").is_file()
+          assert (root / "manifest.json").is_file()
+          print(f"ECMWF RELEASE ROUND-TRIP PASS: run={manifest['run']} verified_data_assets={len(expected)} grid=431x341 steps=65")
+          PY
