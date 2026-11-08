@@ -1,59 +1,75 @@
 #!/usr/bin/env python3
-"""Read-only diagnosis of ECMWF 0.1 degree 18Z index availability."""
+"""Read-only side-by-side ECMWF 0.1 index URL diagnosis for 12Z and 18Z."""
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-import os
-import time
 
-RUN_TEXT = os.getenv("ECMWF_RUN", "20261107T18Z")
-run = datetime.strptime(RUN_TEXT, "%Y%m%dT%HZ").replace(tzinfo=timezone.utc)
-hours = list(range(0, 145, 3))
+DATE = "20261107"
+RUNS = ("12", "18")
 UA = "abusnasir-obs/1.0 diagnostic"
 
-def index_url(hour, level):
-    stamp = run.strftime("%Y%m%d%H") + "0000"
+def forecast_hours(run_hour):
+    if run_hour in ("06", "18"):
+        return list(range(0, 145, 3))
+    return list(range(0, 145, 3)) + list(range(150, 241, 6))
+
+def index_url(run_hour, hour, level):
+    stamp = f"{DATE}{run_hour}0000"
     return (
-        f"https://data.ecmwf.int/forecasts/{run:%Y%m%d}/{run:%H}z/"
+        f"https://data.ecmwf.int/forecasts/{DATE}/{run_hour}z/"
         f"ifs/0p1/oper/{stamp}-{hour}h-oper-fc-{level}.index"
     )
 
 def probe(item):
-    hour, level = item
-    url = index_url(hour, level)
+    run_hour, hour, level = item
+    url = index_url(run_hour, hour, level)
     req = Request(url, method="HEAD", headers={"User-Agent": UA})
     try:
         with urlopen(req, timeout=30) as response:
-            return hour, level, response.status, response.headers.get("Content-Length"), None
+            return run_hour, hour, level, response.status, response.headers.get("Content-Length"), None
     except HTTPError as exc:
-        return hour, level, exc.code, None, str(exc.reason)
+        return run_hour, hour, level, exc.code, None, str(exc.reason)
     except (URLError, TimeoutError, OSError) as exc:
-        return hour, level, "NETWORK_ERROR", None, str(exc)
+        return run_hour, hour, level, "NETWORK_ERROR", None, str(exc)
 
-items = [(hour, level) for hour in hours for level in ("sfc", "pl")]
-print(f"ECMWF 0.1 index diagnostic run={run.isoformat()} steps={len(hours)} files={len(items)}")
+items = [
+    (run_hour, hour, level)
+    for run_hour in RUNS
+    for hour in forecast_hours(run_hour)
+    for level in ("sfc", "pl")
+]
+print(f"ECMWF 0.1 side-by-side index diagnostic date={DATE} total_requests={len(items)}")
 results = {}
-with ThreadPoolExecutor(max_workers=12) as pool:
+with ThreadPoolExecutor(max_workers=16) as pool:
     futures = [pool.submit(probe, item) for item in items]
     for future in as_completed(futures):
         row = future.result()
-        results[(row[0], row[1])] = row
+        results[row[:3]] = row
 
-missing = []
-for hour in hours:
-    pair = [results[(hour, level)] for level in ("sfc", "pl")]
-    states = " ".join(f"{level}={status}" for _, level, status, _, _ in pair)
-    if any(status not in (200, 206) for _, _, status, _, _ in pair):
-        missing.append(hour)
-        print(f"MISSING_STEP +{hour:03d}h {states}")
-print(f"SUMMARY available={len(items)-sum(1 for r in results.values() if r[2] not in (200,206))}/{len(items)} missing_steps={len(missing)}")
-if missing:
-    print("FAILED_URLS:")
-    for hour in missing:
+for run_hour in RUNS:
+    hours = forecast_hours(run_hour)
+    rows = [results[(run_hour, hour, level)] for hour in hours for level in ("sfc", "pl")]
+    available = sum(row[3] in (200, 206) for row in rows)
+    bad_hours = [
+        hour for hour in hours
+        if any(results[(run_hour, hour, level)][3] not in (200, 206) for level in ("sfc", "pl"))
+    ]
+    print(f"SUMMARY run={DATE}T{run_hour}Z horizon={hours[-1]}h steps={len(hours)} "
+          f"available={available}/{len(rows)} missing_steps={len(bad_hours)}")
+    for hour in bad_hours:
         for level in ("sfc", "pl"):
-            _, _, status, size, error = results[(hour, level)]
-            if status not in (200, 206):
-                print(f"+{hour:03d}h {level} status={status} size={size} error={error} url={index_url(hour,level)}")
-else:
-    print("ALL_INDEX_FILES_PRESENT: publisher HEAD readiness gate should accept this cycle.")
+            row = results[(run_hour, hour, level)]
+            if row[3] not in (200, 206):
+                print(f"UNAVAILABLE run={run_hour}Z +{hour:03d}h {level} "
+                      f"status={row[3]} error={row[5]} url={index_url(run_hour,hour,level)}")
+
+# Compact endpoint samples help distinguish a bad URL convention from a cycle-wide delay.
+for run_hour in RUNS:
+    for hour in (0, 3, 144, 150, 240):
+        if hour not in forecast_hours(run_hour):
+            continue
+        for level in ("sfc", "pl"):
+            row = results[(run_hour, hour, level)]
+            print(f"SAMPLE run={run_hour}Z +{hour:03d}h {level} status={row[3]} "
+                  f"url={index_url(run_hour,hour,level)}")
