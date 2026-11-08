@@ -64,7 +64,7 @@ ECMWF_PL = {"t": "t", "r": "rh", "z": "z", "gh": "z", "u": "u", "v": "v"}
 def horizon_hours(model: str, run: datetime | None = None) -> int:
     """Return the provider-native horizon for this model cycle."""
     if model == "ecmwf" and run is not None and run.hour in (6, 18):
-        return 144
+        return 90
     if model in ("ecmwf", "gfs"):
         return HORIZON
     raise RuntimeError(f"unknown model {model}")
