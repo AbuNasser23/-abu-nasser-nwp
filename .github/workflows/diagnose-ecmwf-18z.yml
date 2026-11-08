@@ -1,0 +1,32 @@
+name: Diagnose ECMWF 18Z index availability
+
+on:
+  push:
+    branches:
+      - diagnose/ecmwf-18z-index-availability
+    paths:
+      - "diagnostics/diagnose_ecmwf_18z.py"
+      - ".github/workflows/diagnose-ecmwf-18z.yml"
+  workflow_dispatch:
+    inputs:
+      ecmwf_run:
+        description: "ECMWF cycle in YYYYMMDDTHHZ format"
+        required: false
+        default: "20261107T18Z"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Probe all 98 ECMWF 0.1 index files (read-only)
+        env:
+          ECMWF_RUN: ${{ inputs.ecmwf_run || '20261107T18Z' }}
+        run: python diagnostics/diagnose_ecmwf_18z.py
