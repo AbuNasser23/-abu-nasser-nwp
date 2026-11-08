@@ -74,9 +74,9 @@ class PublishTests(unittest.TestCase):
         for hour in (6, 18):
             run = datetime(2026, 11, 7, hour, tzinfo=timezone.utc)
             steps = publish.hours("ecmwf", run)
-            self.assertEqual(publish.horizon_hours("ecmwf", run), 144)
-            self.assertEqual(steps[-1], 144)
-            self.assertEqual(len(steps), 49)
+            self.assertEqual(publish.horizon_hours("ecmwf", run), 90)
+            self.assertEqual(steps[-1], 90)
+            self.assertEqual(len(steps), 31)
 
     def test_ecmwf_discovery_candidates_include_four_daily_cycles(self):
         now = datetime(2026, 11, 8, 9, tzinfo=timezone.utc)
@@ -153,7 +153,7 @@ class PublishTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 publish.validate_meta(meta, model)
 
-    def test_meta_accepts_native_144h_ecmwf_cycles(self):
+    def test_meta_accepts_native_90h_ecmwf_cycles(self):
         for hour in (6, 18):
             run = datetime(2026, 10, 30, hour, tzinfo=timezone.utc)
             pack = {
@@ -163,8 +163,8 @@ class PublishTests(unittest.TestCase):
                 "fields": {name: None for name in publish.CORE},
             }
             meta = publish.meta_of("ecmwf", pack, {})
-            self.assertEqual(meta["horizonHours"], 144)
-            self.assertEqual(meta["nT"], 49)
+            self.assertEqual(meta["horizonHours"], 90)
+            self.assertEqual(meta["nT"], 31)
             publish.validate_meta(meta, "ecmwf")
 
     def test_ecmwf_missing_gusts_are_nan_not_estimated_from_wind(self):
