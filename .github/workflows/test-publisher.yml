@@ -12,6 +12,7 @@ on:
       - fix/automatic-main-validation-144h
       - feat/publisher-240h-validated
       - fix/republish-same-cycle-on-horizon-upgrade
+      - fix/ecmwf-06-18-native-90h
     paths:
       - "publish.py"
       - "test_publish.py"
