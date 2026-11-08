@@ -9,9 +9,10 @@ import publish
 
 
 def sample_pack(run: datetime, model: str = "ecmwf") -> dict:
-    shape = (len(publish.hours(model)), publish.NY, publish.NX)
-    lats = [round(publish.SOUTH + 0.25 * j, 2) for j in range(publish.NY)]
-    lons = [round(publish.WEST + 0.25 * i, 2) for i in range(publish.NX)]
+    spec = publish.grid_spec(model)
+    shape = (len(publish.hours(model, run)), spec["ny"], spec["nx"])
+    lats = [round(publish.SOUTH + spec["spacing"] * j, 3) for j in range(spec["ny"])]
+    lons = [round(publish.WEST + spec["spacing"] * i, 3) for i in range(spec["nx"])]
     fields = {name: np.zeros(shape, dtype=np.float32) for name in publish.CORE}
     fields["t2m"][:] = 28
     fields["td2m"][:] = 14
@@ -28,6 +29,23 @@ def sample_pack(run: datetime, model: str = "ecmwf") -> dict:
 
 
 class PublishTests(unittest.TestCase):
+
+    def test_model_grids_are_independent(self):
+        ecmwf = publish.grid_spec("ecmwf")
+        gfs = publish.grid_spec("gfs")
+        self.assertEqual(ecmwf, {"spacing": 0.1, "nx": 431, "ny": 341})
+        self.assertEqual(gfs, {"spacing": 0.25, "nx": 173, "ny": 137})
+
+    def test_ecmwf_indexes_include_surface_and_pressure_levels(self):
+        run = datetime(2026, 11, 7, 0, tzinfo=timezone.utc)
+        urls = publish.step_markers("ecmwf", run, 0)
+        self.assertEqual(len(urls), 2)
+        self.assertTrue(any("-sfc.index" in url and "/0p1/" in url for url in urls))
+        self.assertTrue(any("-pl.index" in url and "/0p1/" in url for url in urls))
+        gfs_urls = publish.step_markers("gfs", run, 0)
+        self.assertEqual(len(gfs_urls), 1)
+        self.assertIn("0p25", gfs_urls[0])
+
     def test_ecmwf_native_horizon_is_240h(self):
         steps = publish.hours("ecmwf")
         self.assertEqual(steps[0], 0)
@@ -45,6 +63,26 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(steps[41:], list(range(126, 241, 6)))
         self.assertNotIn(123, steps)
         self.assertIn(144, steps)
+
+    def test_ecmwf_all_four_cycles_use_provider_native_horizons(self):
+        for hour in (0, 12):
+            run = datetime(2026, 11, 7, hour, tzinfo=timezone.utc)
+            steps = publish.hours("ecmwf", run)
+            self.assertEqual(publish.horizon_hours("ecmwf", run), 240)
+            self.assertEqual(steps[-1], 240)
+            self.assertEqual(len(steps), 65)
+        for hour in (6, 18):
+            run = datetime(2026, 11, 7, hour, tzinfo=timezone.utc)
+            steps = publish.hours("ecmwf", run)
+            self.assertEqual(publish.horizon_hours("ecmwf", run), 144)
+            self.assertEqual(steps[-1], 144)
+            self.assertEqual(len(steps), 49)
+
+    def test_ecmwf_discovery_candidates_include_four_daily_cycles(self):
+        now = datetime(2026, 11, 8, 9, tzinfo=timezone.utc)
+        found = publish.candidates("ecmwf", now, lookback=4)
+        self.assertEqual([run.hour for run in found], [6, 0, 18, 12])
+        self.assertEqual([run.day for run in found], [8, 8, 7, 7])
 
     def test_same_run_with_legacy_144h_payload_is_not_treated_as_published(self):
         run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
@@ -101,8 +139,9 @@ class PublishTests(unittest.TestCase):
         for model in ("ecmwf", "gfs"):
             meta = {
                 "model": model,
-                "nx": publish.NX,
-                "ny": publish.NY,
+                "nx": publish.grid_spec(model)["nx"],
+                "ny": publish.grid_spec(model)["ny"],
+                "gridSpacing": publish.grid_spec(model)["spacing"],
                 "nT": len(publish.hours(model)),
                 "run": publish.iso_of(run),
                 "times": publish.expected_times(run, model),
@@ -114,33 +153,43 @@ class PublishTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 publish.validate_meta(meta, model)
 
-    def test_ecmwf_missing_gusts_gets_explicit_wind_based_estimate(self):
-        fields = {
-            "u10": np.full((2, 3), 12.0, dtype=np.float32),
-            "v10": np.full((2, 3), 5.0, dtype=np.float32),
-        }
-        self.assertTrue(publish.fill_missing_ecmwf_gusts(fields))
-        expected = round((13.0 * 1.3) * 10) / 10
-        self.assertTrue(np.allclose(fields["gusts"], expected))
-        self.assertEqual(fields["gusts"].dtype, np.float32)
+    def test_meta_accepts_native_144h_ecmwf_cycles(self):
+        for hour in (6, 18):
+            run = datetime(2026, 10, 30, hour, tzinfo=timezone.utc)
+            pack = {
+                "run": run,
+                "lats": [0.0],
+                "lons": [32.0],
+                "fields": {name: None for name in publish.CORE},
+            }
+            meta = publish.meta_of("ecmwf", pack, {})
+            self.assertEqual(meta["horizonHours"], 144)
+            self.assertEqual(meta["nT"], 49)
+            publish.validate_meta(meta, "ecmwf")
 
-    def test_ecmwf_provider_gusts_are_never_overwritten(self):
-        original = np.full((2, 3), 42.0, dtype=np.float32)
+    def test_ecmwf_missing_gusts_are_nan_not_estimated_from_wind(self):
         fields = {
+            "t2m": np.full((2, 3), 28.0, dtype=np.float32),
             "u10": np.full((2, 3), 12.0, dtype=np.float32),
             "v10": np.full((2, 3), 5.0, dtype=np.float32),
-            "gusts": original.copy(),
         }
-        self.assertFalse(publish.fill_missing_ecmwf_gusts(fields))
+        self.assertTrue(publish.mark_missing_ecmwf_gusts(fields))
+        self.assertEqual(fields["gusts"].dtype, np.float32)
+        self.assertTrue(np.isnan(fields["gusts"]).all())
+
+    def test_ecmwf_native_gusts_are_preserved_unchanged(self):
+        original = np.full((2, 3), 42.0, dtype=np.float32)
+        fields = {"t2m": np.ones((2, 3), dtype=np.float32), "gusts": original.copy()}
+        self.assertFalse(publish.mark_missing_ecmwf_gusts(fields))
         self.assertTrue(np.array_equal(fields["gusts"], original))
 
-    def test_missing_gusts_without_wind_components_is_not_fabricated(self):
-        fields = {"u10": np.ones((2, 3), dtype=np.float32)}
-        self.assertFalse(publish.fill_missing_ecmwf_gusts(fields))
-        self.assertNotIn("gusts", fields)
+    def test_ecmwf_gust_mapping_accepts_only_native_10fg(self):
+        self.assertEqual(publish.ecmwf_want({"param": "10fg", "levtype": "sfc"}), "gusts")
+        self.assertIsNone(publish.ecmwf_want({"param": "gust", "levtype": "sfc"}))
 
     def test_gfs_analysis_precip_is_zeros_only(self):
-        fields = {"t2m": np.ones((publish.NY, publish.NX), dtype=np.float32)}
+        spec = publish.grid_spec("gfs")
+        fields = {"t2m": np.ones((spec["ny"], spec["nx"]), dtype=np.float32)}
         geo = {"window": None}
         self.assertFalse(publish.fill_missing_analysis_precip("gfs", 3, fields, geo))
         self.assertNotIn("precip", fields)
