@@ -8,7 +8,7 @@ on:
       - "publish.py"
       - ".github/workflows/publish.yml"
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
