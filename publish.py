@@ -837,23 +837,57 @@ def current_cycle_ok(site: Path, model: str, run: datetime) -> bool:
 
 
 def disk_cycle_ok(path: Path, model: str, run: datetime) -> bool:
+    """Verify metadata, manifest digests, gzip integrity, and exact float32 payload sizes."""
     meta = read_json(path / "meta.json")
-    if not meta:
+    manifest = read_json(path / "manifest.json")
+    if not meta or not manifest:
         return False
     try:
         validate_meta(meta, model)
-    except RuntimeError:
-        return False
-    if parse_iso(meta["run"]) != run:
-        return False
-    for name in list(CORE) + ["lit", "lifted"]:
-        file = path / f"{name}.f32.bin"
-        if not file.exists() or file.stat().st_size < 32:
+        if parse_iso(meta["run"]) != run:
             return False
-        if file.read_bytes()[:2] != b"\x1f\x8b":
+        spec = grid_spec(model)
+        expected_names = list(CORE) + ["lit", "lifted"]
+        expected_bytes = len(hours(model, run)) * spec["ny"] * spec["nx"] * 4
+        if manifest.get("model") != model or manifest.get("run") != iso_of(run):
             return False
+        if manifest.get("complete") is not True:
+            return False
+        if manifest.get("horizonHours") != horizon_hours(model, run):
+            return False
+        if manifest.get("nx") != spec["nx"] or manifest.get("ny") != spec["ny"]:
+            return False
+        if manifest.get("nT") != len(hours(model, run)):
+            return False
+        meta_digests = meta.get("digests") or {}
+        manifest_files = manifest.get("files") or {}
+        if set(meta_digests) != set(expected_names) or set(manifest_files) != set(expected_names):
+            return False
+        for name in expected_names:
+            file = path / f"{name}.f32.bin"
+            info = manifest_files.get(name) or {}
+            meta_info = meta_digests.get(name) or {}
+            if not file.is_file() or file.stat().st_size < 32:
+                return False
+            if info.get("bytes") != file.stat().st_size or info != meta_info:
+                return False
+            digest = hashlib.sha256()
+            with file.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != info.get("sha256"):
+                return False
+            unpacked = 0
+            with gzip.open(file, "rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    unpacked += len(chunk)
+                    if unpacked > expected_bytes:
+                        return False
+            if unpacked != expected_bytes:
+                return False
+    except (KeyError, TypeError, ValueError, RuntimeError, OSError, EOFError):
+        return False
     return True
-
 
 def write_cycle(site: Path, model: str, pack: dict) -> Path:
     sanity(pack)
