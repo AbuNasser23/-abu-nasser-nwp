@@ -112,13 +112,29 @@ def expected_times(run: datetime, model: str) -> list[str]:
 
 
 def head_ok(url: str, timeout: int = 25) -> bool:
+    """Probe an index URL; fall back to a one-byte GET if the host rejects HEAD."""
     req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
             return 200 <= res.status < 300
     except urllib.error.HTTPError as exc:
-        return exc.code in (200, 206)
+        if exc.code not in (403, 405, 501):
+            return exc.code in (200, 206)
     except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+    # Some object/CDN endpoints reject HEAD while allowing ordinary GET requests.
+    probe = urllib.request.Request(
+        url,
+        headers={"User-Agent": UA, "Range": "bytes=0-0"},
+    )
+    try:
+        with urllib.request.urlopen(probe, timeout=timeout) as res:
+            if res.status not in (200, 206):
+                return False
+            res.read(1)
+            return True
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
         return False
 
 
@@ -193,18 +209,17 @@ def step_markers(model: str, run: datetime, hour: int) -> list[str]:
 
 def cycle_steps_ready(model: str, run: datetime) -> bool:
     urls = [url for hour in hours(model, run) for url in step_markers(model, run, hour)]
-    ok = 0
-    lock = threading.Lock()
-
-    def one(url: str) -> bool:
-        return head_ok(url)
-
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for ready in pool.map(one, urls):
-            if ready:
-                with lock:
-                    ok += 1
-    return ok == len(urls)
+        ready = list(pool.map(head_ok, urls))
+    missing = [url for url, exists in zip(urls, ready) if not exists]
+    if missing:
+        print(
+            f"{model} candidate {iso_of(run)} is not complete: "
+            f"{len(missing)}/{len(urls)} index files unavailable; "
+            f"first missing: {'; '.join(missing[:4])}",
+            file=sys.stderr,
+        )
+    return not missing
 
 
 def discover(
@@ -222,7 +237,15 @@ def discover(
         if required_horizon is not None and horizon < required_horizon:
             continue
         final_hour = hours(model, run)[-1]
-        if not all(head_ok(url) for url in step_markers(model, run, final_hour)):
+        final_markers = step_markers(model, run, final_hour)
+        if not all(head_ok(url) for url in final_markers):
+            missing = [url for url in final_markers if not head_ok(url)]
+            print(
+                f"{model} candidate {iso_of(run)} is not ready through "
+                f"+{final_hour}h; final-step index unavailable: "
+                f"{'; '.join(missing[:2])}",
+                file=sys.stderr,
+            )
             continue
         if cycle_steps_ready(model, run):
             return run
