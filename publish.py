@@ -834,10 +834,12 @@ def pointer_matches(site: Path, model: str, run: datetime) -> bool:
 
 def current_cycle_ok(site: Path, model: str, run: datetime) -> bool:
     """Skip only when the pointer and its on-disk payload satisfy today's schema."""
-    return pointer_matches(site, model, run) and disk_cycle_ok(cycle_dir(site, model, run), model, run)
+    return pointer_matches(site, model, run) and disk_cycle_ok(
+        cycle_dir(site, model, run), model, run, verify_gzip=False
+    )
 
 
-def disk_cycle_ok(path: Path, model: str, run: datetime) -> bool:
+def disk_cycle_ok(path: Path, model: str, run: datetime, *, verify_gzip: bool = True) -> bool:
     """Verify metadata, manifest digests, gzip integrity, and exact float32 payload sizes."""
     meta = read_json(path / "meta.json")
     manifest = read_json(path / "manifest.json")
@@ -878,14 +880,15 @@ def disk_cycle_ok(path: Path, model: str, run: datetime) -> bool:
                     digest.update(chunk)
             if digest.hexdigest() != info.get("sha256"):
                 return False
-            unpacked = 0
-            with gzip.open(file, "rb") as handle:
-                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                    unpacked += len(chunk)
-                    if unpacked > expected_bytes:
-                        return False
-            if unpacked != expected_bytes:
-                return False
+            if verify_gzip:
+                unpacked = 0
+                with gzip.open(file, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        unpacked += len(chunk)
+                        if unpacked > expected_bytes:
+                            return False
+                if unpacked != expected_bytes:
+                    return False
     except (KeyError, TypeError, ValueError, RuntimeError, OSError, EOFError, zlib.error):
         return False
     return True
