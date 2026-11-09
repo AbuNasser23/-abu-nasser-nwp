@@ -17,6 +17,7 @@ import sys
 import threading
 import urllib.error
 import urllib.request
+import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -885,7 +886,7 @@ def disk_cycle_ok(path: Path, model: str, run: datetime) -> bool:
                         return False
             if unpacked != expected_bytes:
                 return False
-    except (KeyError, TypeError, ValueError, RuntimeError, OSError, EOFError):
+    except (KeyError, TypeError, ValueError, RuntimeError, OSError, EOFError, zlib.error):
         return False
     return True
 
