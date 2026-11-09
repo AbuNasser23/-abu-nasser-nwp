@@ -17,6 +17,7 @@ import sys
 import threading
 import urllib.error
 import urllib.request
+import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -112,13 +113,29 @@ def expected_times(run: datetime, model: str) -> list[str]:
 
 
 def head_ok(url: str, timeout: int = 25) -> bool:
+    """Probe an index URL; fall back to a one-byte GET if the host rejects HEAD."""
     req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
             return 200 <= res.status < 300
     except urllib.error.HTTPError as exc:
-        return exc.code in (200, 206)
+        if exc.code not in (403, 405, 501):
+            return exc.code in (200, 206)
     except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+    # Some object/CDN endpoints reject HEAD while allowing ordinary GET requests.
+    probe = urllib.request.Request(
+        url,
+        headers={"User-Agent": UA, "Range": "bytes=0-0"},
+    )
+    try:
+        with urllib.request.urlopen(probe, timeout=timeout) as res:
+            if res.status not in (200, 206):
+                return False
+            res.read(1)
+            return True
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
         return False
 
 
@@ -193,18 +210,17 @@ def step_markers(model: str, run: datetime, hour: int) -> list[str]:
 
 def cycle_steps_ready(model: str, run: datetime) -> bool:
     urls = [url for hour in hours(model, run) for url in step_markers(model, run, hour)]
-    ok = 0
-    lock = threading.Lock()
-
-    def one(url: str) -> bool:
-        return head_ok(url)
-
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for ready in pool.map(one, urls):
-            if ready:
-                with lock:
-                    ok += 1
-    return ok == len(urls)
+        ready = list(pool.map(head_ok, urls))
+    missing = [url for url, exists in zip(urls, ready) if not exists]
+    if missing:
+        print(
+            f"{model} candidate {iso_of(run)} is not complete: "
+            f"{len(missing)}/{len(urls)} index files unavailable; "
+            f"first missing: {'; '.join(missing[:4])}",
+            file=sys.stderr,
+        )
+    return not missing
 
 
 def discover(
@@ -222,7 +238,16 @@ def discover(
         if required_horizon is not None and horizon < required_horizon:
             continue
         final_hour = hours(model, run)[-1]
-        if not all(head_ok(url) for url in step_markers(model, run, final_hour)):
+        final_markers = step_markers(model, run, final_hour)
+        final_ready = [head_ok(url) for url in final_markers]
+        if not all(final_ready):
+            missing = [url for url, ready in zip(final_markers, final_ready) if not ready]
+            print(
+                f"{model} candidate {iso_of(run)} is not ready through "
+                f"+{final_hour}h; final-step index unavailable: "
+                f"{'; '.join(missing[:2])}",
+                file=sys.stderr,
+            )
             continue
         if cycle_steps_ready(model, run):
             return run
@@ -809,27 +834,64 @@ def pointer_matches(site: Path, model: str, run: datetime) -> bool:
 
 def current_cycle_ok(site: Path, model: str, run: datetime) -> bool:
     """Skip only when the pointer and its on-disk payload satisfy today's schema."""
-    return pointer_matches(site, model, run) and disk_cycle_ok(cycle_dir(site, model, run), model, run)
+    return pointer_matches(site, model, run) and disk_cycle_ok(
+        cycle_dir(site, model, run), model, run, verify_gzip=False
+    )
 
 
-def disk_cycle_ok(path: Path, model: str, run: datetime) -> bool:
+def disk_cycle_ok(path: Path, model: str, run: datetime, *, verify_gzip: bool = True) -> bool:
+    """Verify metadata, manifest digests, gzip integrity, and exact float32 payload sizes."""
     meta = read_json(path / "meta.json")
-    if not meta:
+    manifest = read_json(path / "manifest.json")
+    if not meta or not manifest:
         return False
     try:
         validate_meta(meta, model)
-    except RuntimeError:
-        return False
-    if parse_iso(meta["run"]) != run:
-        return False
-    for name in list(CORE) + ["lit", "lifted"]:
-        file = path / f"{name}.f32.bin"
-        if not file.exists() or file.stat().st_size < 32:
+        if parse_iso(meta["run"]) != run:
             return False
-        if file.read_bytes()[:2] != b"\x1f\x8b":
+        spec = grid_spec(model)
+        expected_names = list(CORE) + ["lit", "lifted"]
+        expected_bytes = len(hours(model, run)) * spec["ny"] * spec["nx"] * 4
+        if manifest.get("model") != model or manifest.get("run") != iso_of(run):
             return False
+        if manifest.get("complete") is not True:
+            return False
+        if manifest.get("horizonHours") != horizon_hours(model, run):
+            return False
+        if manifest.get("nx") != spec["nx"] or manifest.get("ny") != spec["ny"]:
+            return False
+        if manifest.get("nT") != len(hours(model, run)):
+            return False
+        meta_digests = meta.get("digests") or {}
+        manifest_files = manifest.get("files") or {}
+        if set(meta_digests) != set(expected_names) or set(manifest_files) != set(expected_names):
+            return False
+        for name in expected_names:
+            file = path / f"{name}.f32.bin"
+            info = manifest_files.get(name) or {}
+            meta_info = meta_digests.get(name) or {}
+            if not file.is_file() or file.stat().st_size < 32:
+                return False
+            if info.get("bytes") != file.stat().st_size or info != meta_info:
+                return False
+            digest = hashlib.sha256()
+            with file.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != info.get("sha256"):
+                return False
+            if verify_gzip:
+                unpacked = 0
+                with gzip.open(file, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        unpacked += len(chunk)
+                        if unpacked > expected_bytes:
+                            return False
+                if unpacked != expected_bytes:
+                    return False
+    except (KeyError, TypeError, ValueError, RuntimeError, OSError, EOFError, zlib.error):
+        return False
     return True
-
 
 def write_cycle(site: Path, model: str, pack: dict) -> Path:
     sanity(pack)

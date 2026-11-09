@@ -36,6 +36,28 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(ecmwf, {"spacing": 0.1, "nx": 431, "ny": 341})
         self.assertEqual(gfs, {"spacing": 0.25, "nx": 173, "ny": 137})
 
+    def test_head_probe_falls_back_to_range_get_when_head_is_rejected(self):
+        from unittest.mock import patch
+        import urllib.error
+
+        class Response:
+            status = 206
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self, size=-1):
+                return b"x"
+
+        url = "https://example.invalid/test.index"
+        rejected = urllib.error.HTTPError(url, 405, "Method Not Allowed", {}, None)
+        with patch("publish.urllib.request.urlopen", side_effect=[rejected, Response()]) as mocked:
+            self.assertTrue(publish.head_ok(url))
+        self.assertEqual(mocked.call_count, 2)
+        self.assertEqual(mocked.call_args_list[0].args[0].get_method(), "HEAD")
+        self.assertEqual(mocked.call_args_list[1].args[0].get_method(), "GET")
+        self.assertEqual(mocked.call_args_list[1].args[0].get_header("Range"), "bytes=0-0")
+
     def test_ecmwf_indexes_include_surface_and_pressure_levels(self):
         run = datetime(2026, 11, 7, 0, tzinfo=timezone.utc)
         urls = publish.step_markers("ecmwf", run, 0)
@@ -117,6 +139,21 @@ class PublishTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 publish.flip_pointer(site, "ecmwf", run, "test")
             self.assertFalse((site / "ecmwf" / "current.json").exists())
+
+    def test_disk_cycle_rejects_payload_corruption_even_when_gzip_header_exists(self):
+        run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            publish.write_cycle(site, "ecmwf", sample_pack(run))
+            cycle = publish.cycle_dir(site, "ecmwf", run)
+            self.assertTrue(publish.disk_cycle_ok(cycle, "ecmwf", run))
+
+            payload = cycle / "t2m.f32.bin"
+            data = bytearray(payload.read_bytes())
+            data[len(data) // 2] ^= 0x01
+            payload.write_bytes(data)
+
+            self.assertFalse(publish.disk_cycle_ok(cycle, "ecmwf", run))
 
     def test_second_cycle_keeps_the_previous_pointer(self):
         first = datetime(2026, 10, 29, 12, tzinfo=timezone.utc)
