@@ -238,8 +238,9 @@ def discover(
             continue
         final_hour = hours(model, run)[-1]
         final_markers = step_markers(model, run, final_hour)
-        if not all(head_ok(url) for url in final_markers):
-            missing = [url for url in final_markers if not head_ok(url)]
+        final_ready = [head_ok(url) for url in final_markers]
+        if not all(final_ready):
+            missing = [url for url, ready in zip(final_markers, final_ready) if not ready]
             print(
                 f"{model} candidate {iso_of(run)} is not ready through "
                 f"+{final_hour}h; final-step index unavailable: "
