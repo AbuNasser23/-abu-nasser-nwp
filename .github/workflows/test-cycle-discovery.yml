@@ -45,4 +45,4 @@ jobs:
         run: python -m unittest -v test_publish.py
 
       - name: Probe the newest complete live ECMWF cycle without publishing
-        run: python publish.py --model ecmwf --discover-only
+        run: python publish.py --model ecmwf --site . --discover-only
