@@ -140,6 +140,21 @@ class PublishTests(unittest.TestCase):
                 publish.flip_pointer(site, "ecmwf", run, "test")
             self.assertFalse((site / "ecmwf" / "current.json").exists())
 
+    def test_disk_cycle_rejects_payload_corruption_even_when_gzip_header_exists(self):
+        run = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            publish.write_cycle(site, "ecmwf", sample_pack(run))
+            cycle = publish.cycle_dir(site, "ecmwf", run)
+            self.assertTrue(publish.disk_cycle_ok(cycle, "ecmwf", run))
+
+            payload = cycle / "t2m.f32.bin"
+            data = bytearray(payload.read_bytes())
+            data[len(data) // 2] ^= 0x01
+            payload.write_bytes(data)
+
+            self.assertFalse(publish.disk_cycle_ok(cycle, "ecmwf", run))
+
     def test_second_cycle_keeps_the_previous_pointer(self):
         first = datetime(2026, 10, 29, 12, tzinfo=timezone.utc)
         second = datetime(2026, 10, 30, 0, tzinfo=timezone.utc)
