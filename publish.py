@@ -39,7 +39,7 @@ def grid_spec(model: str) -> dict:
         raise RuntimeError(f"unknown model {model}") from exc
 UA = "abusnasir-obs/1.0"
 HORIZON = 240
-KEEP_DEFAULT = 2
+KEEP_DEFAULT = 4
 CORE = (
     "t2m", "td2m", "rh2m", "mslp", "u10", "v10", "gusts", "precip", "clouds", "cape",
     "t850", "rh850", "td850", "z850", "u850", "v850",
