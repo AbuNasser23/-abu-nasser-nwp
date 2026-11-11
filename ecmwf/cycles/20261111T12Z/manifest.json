@@ -1,0 +1,170 @@
+{
+  "model": "ecmwf",
+  "run": "2026-11-11T12:00:00Z",
+  "complete": true,
+  "horizonHours": 240,
+  "nx": 431,
+  "ny": 341,
+  "gridSpacing": 0.1,
+  "nT": 65,
+  "source": "ECMWF Open Data \u00b7 IFS 0.1\u00b0 \u0645\u0628\u0627\u0634\u0631\u0629",
+  "fetchedAt": "2026-11-11T22:43:41Z",
+  "files": {
+    "t2m": {
+      "sha256": "4e42530cac82dc877d2a3193cc95425f200b1eb8925bdfc522299c019c652b8b",
+      "bytes": 5989537
+    },
+    "td2m": {
+      "sha256": "2cde8dcc2f3909638c35c5559f70be1599d936c749f958207b5a6c73d54c4ee1",
+      "bytes": 6487583
+    },
+    "rh2m": {
+      "sha256": "1b5b368863fac6945475761e27cc09f37c7a72a1d9e1965b8653384ec32f8fa8",
+      "bytes": 6845671
+    },
+    "mslp": {
+      "sha256": "85c27e973faab4671dfa75197c64935383353dc10397ab8a9cc2a1fc3a8ce47c",
+      "bytes": 5123449
+    },
+    "u10": {
+      "sha256": "f31147921b6a80489b027a022aa2917e14657c857c50b7003b28127e48b6b961",
+      "bytes": 13294066
+    },
+    "v10": {
+      "sha256": "5854f5cc8358489a0866473f4d0936cd1a136dfb3bd0a07c48089d03f0db4ed6",
+      "bytes": 12935982
+    },
+    "gusts": {
+      "sha256": "478df83970b0d35ec6670d3da98a23ca6f772f4899d57a7851f3058ef262a386",
+      "bytes": 7675724
+    },
+    "precip": {
+      "sha256": "e6b357e0613025a500a5a3a1869604a7cc28c9451fdb17670001c4742364e903",
+      "bytes": 2003454
+    },
+    "clouds": {
+      "sha256": "c31885f202499e5b2894132545b832fc2846e5ea3787f64a8d50497b61eb761c",
+      "bytes": 6330345
+    },
+    "cape": {
+      "sha256": "10ad99d645228fdee8c11d00d2705283a55357a0de29d0bf81e95ff1e6ad59a5",
+      "bytes": 7866672
+    },
+    "t850": {
+      "sha256": "03bcd26fe78a0f6231b629c984e8c3babf0222617b8abe112d8d4b9cb22c6df6",
+      "bytes": 5127871
+    },
+    "rh850": {
+      "sha256": "24d7100c2bc564d2940f8d97bbe1939f43d8fcc6b36f07f0e037b6905d819bd9",
+      "bytes": 7158590
+    },
+    "td850": {
+      "sha256": "b5a57eb986f5c67176a7eccdd9e88b1bee9358963b557045de34e5a9594aa9b0",
+      "bytes": 10184909
+    },
+    "z850": {
+      "sha256": "ac15419cb4ce4e7ad5c2b584df8a046b5529c1462064fa32cd4e77eab28934e8",
+      "bytes": 7311992
+    },
+    "u850": {
+      "sha256": "fc89f0b84f6e25aa9e15a5bd9c0a85c5ee65b718d3873bde039d92e8b2570e03",
+      "bytes": 11148702
+    },
+    "v850": {
+      "sha256": "d0a1ae96282c27aed4f8d91218777799a8361b03846fccaaaef7bd3d04598ffb",
+      "bytes": 11190253
+    },
+    "t700": {
+      "sha256": "ff57902a7c7b2fadb1885c482ed2a9c8b500a860771f0329a95dd204204a0f8e",
+      "bytes": 3859530
+    },
+    "rh700": {
+      "sha256": "584bbfa14a3554757ba359cb16d10a84a57058cde65580f0fed925eea2a8a2cf",
+      "bytes": 5930591
+    },
+    "td700": {
+      "sha256": "33cb166726c8877d363129fed6b68b81d253bf1305f5b6b83eb6c9df6d59e5a1",
+      "bytes": 8955084
+    },
+    "z700": {
+      "sha256": "3275b9071416297f265a15acedf482792e88ae76d90d0def964c746d9fd489ad",
+      "bytes": 2100362
+    },
+    "u700": {
+      "sha256": "eadcde3d34f245381c02d3437631066a532b1eb8247fa3e0b5c26582cda1c80b",
+      "bytes": 9964081
+    },
+    "v700": {
+      "sha256": "5511d37e37bf48f383289c51c1f73193f4d07f9d56948a28ea353aaed2ed386d",
+      "bytes": 9737978
+    },
+    "t500": {
+      "sha256": "a6cf415c202fc146f54b76af4e2724d47c67c73d91990f72c3eb682d11a58d51",
+      "bytes": 3053416
+    },
+    "rh500": {
+      "sha256": "a86473d28fddf4f818184577c56e87851ce1a78aa5cb47ee10bf21e60d469479",
+      "bytes": 4587980
+    },
+    "z500": {
+      "sha256": "a51da46f0e862ed9b94c2688f06c4029130b9cbaf7975d9a1e379f176711a498",
+      "bytes": 1968857
+    },
+    "u500": {
+      "sha256": "e921ea19650655914134307219c4cec8d19d5315cca728b302878497e3969d8d",
+      "bytes": 8703755
+    },
+    "v500": {
+      "sha256": "0dc90bf86ba57f622140c3b063709d3f06ff7e9e3f158b44c6055a83429cade9",
+      "bytes": 7648930
+    },
+    "t300": {
+      "sha256": "45fa515c32527d4fe67162e2c314b031e5f5542e262b713678481022171f1e6f",
+      "bytes": 2276892
+    },
+    "rh300": {
+      "sha256": "9f8378c5feddd92cf30e6fe3f985a1ff98d82560b449c0fb3ae7d2930e5bc254",
+      "bytes": 4022421
+    },
+    "z300": {
+      "sha256": "6f44426fc06f868d99db02f59311680de256de2792441b4fd17a64f0c8f7c7d2",
+      "bytes": 2393974
+    },
+    "u300": {
+      "sha256": "015c5f5194c5f9f46f126787b69a5ea44945cfb56c52b36f3ff38dabf1ab1358",
+      "bytes": 7888626
+    },
+    "v300": {
+      "sha256": "acda7a1df2951d9e7ec223f79f8a667efd276141d42e99c6bf4b205915961207",
+      "bytes": 6770539
+    },
+    "lit": {
+      "sha256": "27560abd82f617f6b4d936656a372e0650fb87dece25c3ffa6df04795259303e",
+      "bytes": 37188
+    },
+    "lifted": {
+      "sha256": "27560abd82f617f6b4d936656a372e0650fb87dece25c3ffa6df04795259303e",
+      "bytes": 37188
+    }
+  },
+  "notes": [
+    "ECMWF native 10fg unavailable at +93h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +96h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +99h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +102h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +105h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +108h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +111h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +114h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +117h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +120h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +123h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +126h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +129h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +132h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +135h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +138h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +141h; gusts left NaN (no estimate)",
+    "ECMWF native 10fg unavailable at +144h; gusts left NaN (no estimate)"
+  ]
+}
