@@ -1,14 +1,14 @@
 {
   "model": "ecmwf",
-  "run": "2026-11-11T12:00:00Z",
-  "path": "ecmwf/cycles/20261111T12Z",
+  "run": "2026-11-11T18:00:00Z",
+  "path": "ecmwf/cycles/20261111T18Z",
   "complete": true,
-  "nT": 65,
+  "nT": 49,
   "nx": 431,
   "ny": 341,
   "gridSpacing": 0.1,
-  "horizonHours": 240,
-  "publishedAt": "2026-11-11T22:43:48Z",
+  "horizonHours": 144,
+  "publishedAt": "2026-11-12T02:57:39Z",
   "source": "ECMWF Open Data IFS 0.1",
-  "previous": "2026-11-11T06:00:00Z"
+  "previous": "2026-11-11T12:00:00Z"
 }
