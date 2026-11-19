@@ -58,8 +58,24 @@ ECMWF_SURFACE = {
     "tp": "precip",
     "tcc": "clouds",
     "mucape": "cape",
+    "skt": "skt",
+    "tcwv": "tcwv",
+    "100u": "u100",
+    "100v": "v100",
+    "mx2t3": "mx2t3",
+    "mn2t3": "mn2t3",
+    "ptype": "ptype",
 }
 ECMWF_PL = {"t": "t", "r": "rh", "z": "z", "gh": "z", "u": "u", "v": "v"}
+ECMWF_DISPLAY = ("skt", "tcwv", "u100", "v100", "mx2t3", "mn2t3", "ptype")
+
+
+def published_names(model: str) -> list[str]:
+    names = list(CORE)
+    if model == "ecmwf":
+        names.extend(ECMWF_DISPLAY)
+    names.extend(("lit", "lifted"))
+    return names
 
 
 def horizon_hours(model: str, run: datetime | None = None) -> int:
@@ -327,6 +343,12 @@ def dewpoint_c(t_c: np.ndarray, rh: np.ndarray) -> np.ndarray:
 
 
 def convert_ecmwf(name: str, field: np.ndarray) -> np.ndarray:
+    if name in ("skt", "mx2t3", "mn2t3"):
+        return np.round((field - 273.15) * 10) / 10
+    if name == "tcwv":
+        return np.round(field.astype(np.float64) * 10) / 10
+    if name == "ptype":
+        return np.rint(field).astype(np.float32)
     if name.startswith("t") or name == "td2m":
         return np.round((field - 273.15) * 10) / 10
     if name.startswith("u") or name.startswith("v") or name == "gusts":
@@ -365,6 +387,20 @@ def convert_gfs(name: str, field: np.ndarray) -> np.ndarray:
     if name == "precip":
         return np.round(field * 100) / 100
     return field
+
+
+def mark_missing_ecmwf_display(fields: dict[str, np.ndarray]) -> list[str]:
+    """Keep optional IFS surface slots without copying another hour or inventing values."""
+    reference = fields.get("t2m")
+    if reference is None:
+        raise RuntimeError("cannot shape missing ECMWF display field without t2m")
+    missing = []
+    for name in ECMWF_DISPLAY:
+        if name in fields:
+            continue
+        fields[name] = np.full(reference.shape, np.nan, dtype=np.float32)
+        missing.append(name)
+    return missing
 
 
 def mark_missing_ecmwf_gusts(fields: dict[str, np.ndarray]) -> bool:
@@ -592,8 +628,12 @@ def pull_ecmwf_step(run: datetime, hour: int) -> tuple[dict[str, np.ndarray], di
                 continue
             row = json.loads(line)
             name = ecmwf_want(row)
-            if name:
-                rows.append((name, base, int(row["_offset"]), int(row["_length"])))
+            if not name:
+                continue
+            length = int(row["_length"])
+            if name in ECMWF_DISPLAY and length < 800:
+                continue
+            rows.append((name, base, int(row["_offset"]), length))
     if not any(name == "t2m" for name, _, _, _ in rows):
         raise RuntimeError(f"ecmwf 0.1 missing 2t surface field at +{hour}h")
     if not any(name == "t850" for name, _, _, _ in rows):
@@ -625,7 +665,13 @@ def pull_ecmwf_step(run: datetime, hour: int) -> tuple[dict[str, np.ndarray], di
                 raise RuntimeError(
                     f"ECMWF gust message is not native 10fg (paramId={param_id}, shortName={short_name})"
                 )
-        fields[name] = convert_ecmwf(name, decode(buf, j0, j1, i0, i1, meta[5]))
+        try:
+            decoded = decode(buf, j0, j1, i0, i1, meta[5])
+        except Exception:
+            if name in ECMWF_DISPLAY:
+                continue
+            raise
+        fields[name] = convert_ecmwf(name, decoded)
     lats, lons, fields = orient(lats, lons, fields)
     return fields, {"lats": lats, "lons": lons, "window": None}
 
@@ -666,6 +712,11 @@ def assemble(model: str, run: datetime) -> dict:
         if model == "ecmwf":
             if mark_missing_ecmwf_gusts(fields):
                 notes.append(f"ECMWF native 10fg unavailable at +{hour}h; gusts left NaN (no estimate)")
+            missing_display = mark_missing_ecmwf_display(fields)
+            if missing_display:
+                notes.append(
+                    f"ECMWF optional surface unavailable at +{hour}h ({', '.join(missing_display)}); left NaN, not copied from another hour"
+                )
             tp = fields.get("precip")
             if tp is not None:
                 step_mm = tp * 1000.0 if prev_tp is None else (tp - prev_tp) * 1000.0
@@ -674,7 +725,8 @@ def assemble(model: str, run: datetime) -> dict:
         else:
             windows.append(geo.get("window"))
         finish_derived(fields)
-        missing = [name for name in CORE if name not in fields]
+        required = [name for name in published_names(model) if name not in ("lit", "lifted")]
+        missing = [name for name in required if name not in fields]
         if missing:
             raise RuntimeError(f"+{hour}h missing {', '.join(missing)}")
         frames.append(fields)
@@ -688,7 +740,7 @@ def assemble(model: str, run: datetime) -> dict:
         )
         for frame, rain in zip(frames, reduced):
             frame["precip"] = rain
-    stack = {name: np.stack([frame[name] for frame in frames]).astype(np.float32) for name in CORE}
+    stack = {name: np.stack([frame[name] for frame in frames]).astype(np.float32) for name in required}
     empty = np.full((len(frames), len(lats), len(lons)), np.nan, dtype=np.float32)
     stack["lit"] = empty.copy()
     stack["lifted"] = empty.copy()
@@ -850,7 +902,7 @@ def disk_cycle_ok(path: Path, model: str, run: datetime, *, verify_gzip: bool = 
         if parse_iso(meta["run"]) != run:
             return False
         spec = grid_spec(model)
-        expected_names = list(CORE) + ["lit", "lifted"]
+        expected_names = published_names(model)
         expected_bytes = len(hours(model, run)) * spec["ny"] * spec["nx"] * 4
         if manifest.get("model") != model or manifest.get("run") != iso_of(run):
             return False

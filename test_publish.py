@@ -13,7 +13,8 @@ def sample_pack(run: datetime, model: str = "ecmwf") -> dict:
     shape = (len(publish.hours(model, run)), spec["ny"], spec["nx"])
     lats = [round(publish.SOUTH + spec["spacing"] * j, 3) for j in range(spec["ny"])]
     lons = [round(publish.WEST + spec["spacing"] * i, 3) for i in range(spec["nx"])]
-    fields = {name: np.zeros(shape, dtype=np.float32) for name in publish.CORE}
+    names = [name for name in publish.published_names(model) if name not in ("lit", "lifted")]
+    fields = {name: np.zeros(shape, dtype=np.float32) for name in names}
     fields["t2m"][:] = 28
     fields["td2m"][:] = 14
     fields["rh2m"][:] = 40
@@ -234,6 +235,36 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(float(fields["precip"].sum()), 0.0)
         self.assertEqual(geo["window"], (0, 0))
         self.assertFalse(publish.fill_missing_analysis_precip("ecmwf", 0, {"t2m": fields["t2m"]}, {"window": None}))
+
+    def test_ecmwf_display_fields_keep_native_units(self):
+        kelvin = np.array([[300.15]], dtype=np.float32)
+        self.assertEqual(float(publish.convert_ecmwf("skt", kelvin)[0, 0]), 27.0)
+        self.assertEqual(float(publish.convert_ecmwf("mx2t3", kelvin)[0, 0]), 27.0)
+        self.assertEqual(float(publish.convert_ecmwf("mn2t3", kelvin)[0, 0]), 27.0)
+        vapour = np.array([[42.0]], dtype=np.float32)
+        self.assertEqual(float(publish.convert_ecmwf("tcwv", vapour)[0, 0]), 42.0)
+        wind = np.array([[10.0]], dtype=np.float32)
+        self.assertEqual(float(publish.convert_ecmwf("u100", wind)[0, 0]), 36.0)
+        self.assertEqual(float(publish.convert_ecmwf("v100", wind)[0, 0]), 36.0)
+        code = np.array([[1.2]], dtype=np.float32)
+        self.assertEqual(float(publish.convert_ecmwf("ptype", code)[0, 0]), 1.0)
+
+    def test_ecmwf_display_mapping_and_missing_hour_stay_nan(self):
+        self.assertEqual(publish.ecmwf_want({"param": "skt", "levtype": "sfc"}), "skt")
+        self.assertEqual(publish.ecmwf_want({"param": "tcwv", "levtype": "sfc"}), "tcwv")
+        self.assertEqual(publish.ecmwf_want({"param": "100u", "levtype": "sfc"}), "u100")
+        self.assertEqual(publish.ecmwf_want({"param": "100v", "levtype": "sfc"}), "v100")
+        self.assertEqual(publish.ecmwf_want({"param": "mx2t3", "levtype": "sfc"}), "mx2t3")
+        self.assertEqual(publish.ecmwf_want({"param": "mn2t3", "levtype": "sfc"}), "mn2t3")
+        self.assertEqual(publish.ecmwf_want({"param": "ptype", "levtype": "sfc"}), "ptype")
+        self.assertIsNone(publish.ecmwf_want({"param": "tcw", "levtype": "sfc"}))
+        fields = {"t2m": np.full((2, 2), 28.0, dtype=np.float32), "skt": np.full((2, 2), 30.0, dtype=np.float32)}
+        missing = publish.mark_missing_ecmwf_display(fields)
+        self.assertEqual(missing, ["tcwv", "u100", "v100", "mx2t3", "mn2t3", "ptype"])
+        self.assertTrue(np.isnan(fields["mx2t3"]).all())
+        self.assertTrue(np.array_equal(fields["skt"], np.full((2, 2), 30.0, dtype=np.float32)))
+        self.assertEqual(publish.published_names("gfs"), list(publish.CORE) + ["lit", "lifted"])
+        self.assertEqual(publish.published_names("ecmwf")[-9:], list(publish.ECMWF_DISPLAY) + ["lit", "lifted"])
 
 
 if __name__ == "__main__":
